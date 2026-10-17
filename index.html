@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Português Primeiro</title>
+  <link rel="stylesheet" href="lock.css">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Português">
+  <link rel="icon" href="icon.svg">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="header-top">
+        <h1>Português primeiro</h1>
+        <button id="header-settings" class="link header-settings">⚙ Settings</button>
+      </div>
+      <p class="sub"><span class="ext-only">Firefox stays locked until today's lesson is done.</span><span class="web-only">Today's lesson and quizzes. Finishing them keeps your streak and unlocks Firefox on your computer.</span></p>
+      <div id="streak" class="streak"></div>
+      <p id="sync-status" class="hint" hidden></p>
+    </header>
+
+    <!-- 1. Study, then take the quiz -->
+    <section id="setup-view" hidden>
+      <div class="card">
+        <h2><span class="num">1</span> Today's lesson</h2>
+
+        <p id="lesson-loading" class="hint">Loading lessons…</p>
+        <p id="lesson-error" class="error" hidden></p>
+
+        <div id="lesson-card" hidden>
+          <div class="lesson-head">
+            <select id="lesson-select" aria-label="Lesson"></select>
+          </div>
+          <p id="lesson-meta" class="hint" style="margin-top:4px"></p>
+          <p id="daily-status" class="hint" hidden></p>
+          <p id="daily-error" class="error" hidden></p>
+
+          <article id="daily" class="daily" hidden>
+            <h3 id="daily-title"></h3>
+            <p id="daily-intro"></p>
+            <div id="daily-focus" class="focus" hidden></div>
+            <div id="daily-sections"></div>
+            <h4>Vocabulary</h4>
+            <table id="daily-vocab" class="vocab"></table>
+            <h4>Check yourself</h4>
+            <ol id="daily-practice" class="practice"></ol>
+            <p id="daily-recap" class="recap"></p>
+          </article>
+        </div>
+        <div class="row">
+          <button id="read-lesson">Read the original ↗</button>
+          <button id="rewrite-lesson" class="link" hidden>Rewrite today's lesson</button>
+        </div>
+      </div>
+
+      <div class="card" id="tasks-card">
+        <h2><span class="num">2</span> Today's quizzes</h2>
+        <p class="hint" style="margin-top:0">Finish all three, in any order, to <span class="ext-only">unlock Firefox</span><span class="web-only">complete the day</span>.</p>
+
+        <div class="task" id="task-lesson">
+          <h3><span class="task-check" id="lesson-check"></span> Lesson quiz</h3>
+          <p id="gemini-plan"></p>
+          <p id="lesson-task-note" class="hint"></p>
+          <button id="generate-quiz" class="primary">Start the lesson quiz</button>
+          <p id="gemini-status" class="hint"></p>
+          <p id="gemini-error" class="error" hidden></p>
+        </div>
+
+        <div class="task" id="task-review">
+          <h3><span class="task-check" id="review-check"></span> Review quiz</h3>
+          <p id="review-summary"></p>
+          <p class="hint">No pass mark: just finish it. Items you get right come back later; misses come back tomorrow.</p>
+          <button id="review-btn" class="primary">Start the review quiz</button>
+          <p id="review-status" class="hint"></p>
+          <p id="review-error" class="error" hidden></p>
+        </div>
+
+        <div class="task" id="task-vocab">
+          <h3><span class="task-check" id="vocab-check"></span> Vocab quiz</h3>
+          <p id="vocab-summary"></p>
+          <p class="hint">Type the English for each Portuguese word. No pass mark: just finish it.</p>
+          <button id="vocab-btn" class="primary">Start the vocab quiz</button>
+          <p id="vocab-status" class="hint"></p>
+          <p id="vocab-error" class="error" hidden></p>
+        </div>
+      </div>
+
+      <div class="card" id="gemini-setup-hint" hidden>
+        <p style="margin:0">Tip: add a Gemini API key in <button id="hint-options" class="link" style="padding:0">settings</button>
+          and quizzes are written from today's lesson in one click, with no copy and paste.</p>
+      </div>
+
+      <details id="manual" class="manual">
+        <summary>Gemini not working? Paste a quiz from any chatbot</summary>
+
+        <div class="card">
+          <h2><span class="num">2</span> Get today's quiz</h2>
+          <p>Copy this prompt into the Gemini app, NotebookLM, or any other chatbot. It asks for a
+            <strong class="count-label"></strong>-question quiz on today's lesson.</p>
+          <div class="row">
+            <button id="copy-quiz" class="primary">Copy quiz prompt</button>
+            <button id="toggle-prompt" class="link">Show prompt</button>
+          </div>
+          <pre id="prompt-preview" hidden></pre>
+        </div>
+
+        <div class="card">
+          <h2><span class="num">3</span> Paste the quiz and take it</h2>
+          <textarea id="quiz-json" rows="6" placeholder='Paste the JSON reply here ({"lesson": ..., "questions": [...]})'></textarea>
+          <p id="parse-error" class="error" hidden></p>
+          <button id="start-quiz" class="primary">Start quiz</button>
+          <p class="hint">You need <strong class="pass-label"></strong>% to unlock. Each quiz can only be used once.</p>
+        </div>
+      </details>
+
+      <details class="emergency ext-only">
+        <summary>Emergency pass</summary>
+        <p>Unlocks Firefox for <span id="em-minutes"></span> minutes, once per day. Type this exactly:</p>
+        <p class="phrase" id="em-phrase"></p>
+        <input id="em-input" type="text" autocomplete="off" spellcheck="false">
+        <button id="em-btn">Use emergency pass</button>
+        <p id="em-msg" class="hint"></p>
+      </details>
+    </section>
+
+    <!-- 2. Quiz -->
+    <section id="quiz-view" hidden>
+      <div class="card">
+        <div class="progress"><div id="q-bar"></div></div>
+        <p id="q-progress" class="hint"></p>
+        <h2 id="q-text" class="question"></h2>
+        <div id="q-answer"></div>
+        <div id="feedback" class="feedback" hidden></div>
+        <div class="row">
+          <button id="check-btn" class="primary">Check</button>
+          <button id="skip-btn">I don't know</button>
+          <button id="override-btn" class="link" hidden>My answer was actually right</button>
+          <button id="next-btn" class="primary" hidden>Next →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Result -->
+    <section id="result-view" hidden>
+      <div class="card">
+        <h2 id="result-title"></h2>
+        <p id="result-score" class="score"></p>
+        <div id="review"></div>
+        <p id="next-lesson" class="hint" hidden></p>
+        <div class="row">
+          <button id="retry-btn" class="primary" hidden>Try again with a new quiz</button>
+          <button id="continue-btn" class="primary ext-only" hidden>Continue browsing →</button>
+          <button id="to-practice" hidden>Practice quiz</button>
+          <button id="practice-again" class="primary" hidden>Another practice quiz</button>
+          <button id="practice-done" hidden>Done</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Already done today -->
+    <section id="done-view" hidden>
+      <div class="card">
+        <h2>Feito! ✅</h2>
+        <p>You've done all of today's quizzes. <span class="ext-only">Firefox is unlocked until 4am.</span><span class="web-only">Your streak is safe, and Firefox on your computer unlocks within a few minutes.</span></p>
+        <div class="row">
+          <button id="done-continue" class="primary ext-only" hidden>Continue browsing →</button>
+          <button id="open-options">Settings &amp; history</button>
+        </div>
+      </div>
+
+      <div class="card" id="vocab-card" hidden>
+        <h2>More vocab</h2>
+        <p id="vocab-more-summary"></p>
+        <p class="hint">These count: each word's schedule updates, so missed words come back sooner and words you know move further out.</p>
+        <div class="row">
+          <button id="vocab-more-btn" class="primary">Start a vocab quiz</button>
+        </div>
+        <p id="vocab-more-status" class="hint"></p>
+        <p id="vocab-more-error" class="error" hidden></p>
+      </div>
+
+      <div class="card" id="practice-card" hidden>
+        <h2>Practice for fun</h2>
+        <p>Take an extra quiz on any lesson. It doesn't count: no streak, no history, no review queue.</p>
+        <select id="practice-lesson" aria-label="Lesson to practice"></select>
+
+        <div class="row">
+          <button id="practice-btn" class="primary">Start a practice quiz</button>
+          <button id="overview-original">Read the original ↗</button>
+        </div>
+        <p id="practice-status" class="hint"></p>
+        <p id="practice-error" class="error" hidden></p>
+
+        <details id="practice-overview" class="daily" open>
+          <summary>Lesson overview</summary>
+          <p id="overview-status" class="hint" hidden></p>
+          <div id="overview-body"></div>
+        </details>
+      </div>
+    </section>
+  </main>
+  <script src="web-shim.js"></script>
+  <script src="shared.js"></script>
+  <script src="github.js"></script>
+  <script src="store.js"></script>
+  <script src="book.js"></script>
+  <script src="review.js"></script>
+  <script src="gemini.js"></script>
+  <script src="lock.js"></script>
+</body>
+</html>

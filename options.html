@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Português Primeiro Settings</title>
+  <link rel="stylesheet" href="lock.css">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Português">
+  <link rel="icon" href="icon.svg">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="web-only" style="margin:0 0 8px"><a href="index.html">← Back to today's lesson</a></p>
+      <h1>Settings</h1>
+      <div id="status" class="streak"></div>
+    </header>
+
+    <div class="card">
+      <h2>Sync with GitHub</h2>
+      <p class="hint" style="margin-top:0">Your syllabus, progress, review queue, settings, and every quiz result are saved
+        as files in a private GitHub repo. Install the extension on another computer, enter the same two values, and
+        everything comes with you.</p>
+
+      <label for="githubRepo">Data repo (owner/name)</label>
+      <input id="githubRepo" type="text" spellcheck="false" placeholder="KagazzIe/portugues-primeiro">
+
+      <label for="githubToken" style="margin-top:16px">Access token</label>
+      <input id="githubToken" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+      <p class="hint">Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>:
+        Repository access → <em>Only select repositories</em> → your data repo; Permissions → <em>Contents: Read and write</em>.
+        It's stored only on this device.</p>
+
+      <div class="row">
+        <button id="connect" class="primary">Connect</button>
+        <button id="sync-now">Sync now</button>
+        <span id="sync-msg" class="hint" style="margin:0"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Gemini</h2>
+      <p class="hint" style="margin-top:0">Writes a lesson for you each day, generates quizzes from it,
+        and marks written answers. Get a free key at
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.
+        On the free tier, Google may use what you send to improve its products. The key is stored only on this device.</p>
+
+      <label for="geminiApiKey">API key</label>
+      <input id="geminiApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+
+      <label for="geminiModel" style="margin-top:16px">Model</label>
+      <input id="geminiModel" type="text" spellcheck="false">
+
+      <div class="row">
+        <button id="test-gemini">Test connection</button>
+        <span id="test-status" class="hint" style="margin:0"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Textbook</h2>
+      <label for="bookUrl">Textbook URL (a Pressbooks book)</label>
+      <input id="bookUrl" type="text" spellcheck="false">
+      <p id="syllabus-status"></p>
+      <div class="row">
+        <button id="reload-lessons">Reload lesson list</button>
+        <span id="reload-status" class="hint" style="margin:0"></span>
+      </div>
+      <ol id="lesson-list" class="lesson-list"></ol>
+      <p id="review-status" class="hint"></p>
+      <details id="syllabus-edit" style="margin-top:12px">
+        <summary style="cursor:pointer;color:var(--muted)">Edit syllabus (JSON)</summary>
+        <p class="hint">Fix lesson titles. Each lesson needs a "title" and at least one entry in "sources".</p>
+        <textarea id="syllabus-json" rows="14"></textarea>
+        <div class="row">
+          <button id="save-syllabus">Save syllabus</button>
+          <span id="syllabus-json-status" class="hint" style="margin:0"></span>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Quiz &amp; lock</h2>
+      <div class="row" style="margin-top:0">
+        <div style="flex:1;min-width:140px">
+          <label for="questionCount">Questions per quiz (min <span id="min-q"></span>)</label>
+          <input id="questionCount" type="text" inputmode="numeric">
+        </div>
+        <div style="flex:1;min-width:140px">
+          <label for="passPercent">Unlock at % (min <span id="min-p"></span>)</label>
+          <input id="passPercent" type="text" inputmode="numeric">
+        </div>
+        <div style="flex:1;min-width:140px">
+          <label for="advancePercent">Next lesson at %</label>
+          <input id="advancePercent" type="text" inputmode="numeric">
+        </div>
+      </div>
+      <p class="hint">Scoring between the two marks unlocks Firefox but repeats the lesson tomorrow.</p>
+
+      <label class="check" style="margin-top:16px">
+        <input id="skipPronunciation" type="checkbox">
+        Skip pronunciation: no lessons or questions on sounds, stress, or syllables
+      </label>
+      <p class="hint">Pronunciation-only lessons are marked <code>"skip": true</code> in the syllabus and stepped over.</p>
+
+      <label class="ext-only" for="allowlist" style="margin-top:16px">Sites allowed while locked (one domain per line, subdomains included)</label>
+      <textarea class="ext-only" id="allowlist" rows="9"></textarea>
+
+      <div class="row">
+        <button id="save" class="primary">Save</button>
+        <span id="saved" class="hint" style="margin:0"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>History</h2>
+      <div id="history"></div>
+    </div>
+  </main>
+  <script src="web-shim.js"></script>
+  <script src="shared.js"></script>
+  <script src="github.js"></script>
+  <script src="store.js"></script>
+  <script src="book.js"></script>
+  <script src="review.js"></script>
+  <script src="gemini.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
