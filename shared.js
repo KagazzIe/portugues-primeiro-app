@@ -5,7 +5,7 @@ const SYNCED_DEFAULTS = {
   bookUrl: "https://wisc.pb.unizin.org/portuguese/",
   questionCount: 10,
   passPercent: 80,
-  advancePercent: 90,
+  advancePercent: 80,
   skipPronunciation: false,
   geminiModel: "gemini-3.5-flash-lite",
   allowlist: [

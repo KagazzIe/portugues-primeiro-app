@@ -451,9 +451,12 @@ async function finish() {
   const right = results.filter((r) => r.correct).length;
   const pct = Math.round((right / total) * 100);
   const passed = pct >= settings.passPercent;
-  const earnedAdvance = passed && pct >= settings.advancePercent;
   const today = todayKey();
   const lessonIndex = quizLessonIndex;
+  // Only the day's first lesson quiz on this lesson can move you on; retries still pass the day's task.
+  const isFirstAttempt = (p) => !(p.history || []).some((h) => h.date === today && h.lessonIndex === lessonIndex);
+  const firstToday = isFirstAttempt(progress);
+  const earnedAdvance = passed && firstToday && pct >= settings.advancePercent;
   const lastIndex = syllabus ? syllabus.lessons.length - 1 : 0;
   $("result-title").textContent = "Saving…";
   $("result-score").textContent = `${right}/${total} (${pct}%)`;
@@ -471,6 +474,7 @@ async function finish() {
     right,
     total,
     passed,
+    firstToday,
     missed: [...new Set(results.filter((r) => !r.correct).map((r) => r.question.explain || r.q))].slice(0, 6),
   };
   const message = `Quiz ${today}: ${quiz.lesson} ${right}/${total}`;
@@ -484,7 +488,9 @@ async function finish() {
     if (passed) {
       nextP = withTaskDone(nextP, "lesson");
       const nextIndex = syllabus ? nextLessonIndex(syllabus, lessonIndex) : -1;
-      if (earnedAdvance && p.currentLesson === lessonIndex && nextIndex !== -1) nextP.currentLesson = nextIndex;
+      // Rechecked against the latest synced history, in case a quiz was taken on another device meanwhile.
+      const advance = pct >= settings.advancePercent && isFirstAttempt(p);
+      if (advance && p.currentLesson === lessonIndex && nextIndex !== -1) nextP.currentLesson = nextIndex;
     }
     return nextP;
   }, message);
@@ -519,7 +525,7 @@ async function finish() {
   renderMisses("What you missed. These go into your review queue:");
   if (passed) {
     renderAfterTask("Lesson quiz passed!");
-    if (syllabus) renderNextLesson(lessonIndex, earnedAdvance);
+    if (syllabus) renderNextLesson(lessonIndex, earnedAdvance, firstToday);
   } else {
     $("result-title").textContent = `Quase! You need ${settings.passPercent}% to pass the lesson quiz.`;
     $("retry-btn").hidden = false;
@@ -548,7 +554,7 @@ function renderAfterTask(doneText) {
   }
 }
 
-function renderNextLesson(lessonIndex, earnedAdvance) {
+function renderNextLesson(lessonIndex, earnedAdvance, firstToday) {
   const box = $("next-lesson");
   box.replaceChildren();
   box.hidden = false;
@@ -570,8 +576,11 @@ function renderNextLesson(lessonIndex, earnedAdvance) {
   } else if (progress.currentLesson === nextIndex) {
     box.append(`Tomorrow: ${title(nextIndex)}. `, button("Stay on this lesson instead", lessonIndex, `Tomorrow: ${title(lessonIndex)} again.`));
   } else if (!earnedAdvance) {
+    const why = firstToday
+      ? `Moving on takes ${settings.advancePercent}% on your first lesson quiz of the day`
+      : "Only your first lesson quiz of the day counts toward moving on";
     box.append(
-      `Moving on takes ${settings.advancePercent}%, so tomorrow is ${title(lessonIndex)} again, focused on what you missed. `,
+      `${why}, so tomorrow is ${title(lessonIndex)} again, focused on what you missed. `,
       button("Move on anyway", nextIndex, `Tomorrow: ${title(nextIndex)}.`)
     );
   } else {
