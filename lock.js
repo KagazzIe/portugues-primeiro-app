@@ -60,7 +60,7 @@ Rules:
   {"type":"text","q":"Translate: I am tired.","answer":"Estou cansado.","accept":["Eu estou cansado.","Estou cansada.","Eu estou cansada."],"explain":"Temporary states use estar."}
 ]}
 
-For "mc", "answer" is the zero-based index of the correct option.`;
+For "mc", "answer" is the zero-based index of the correct option, and add "translation": a full English translation of the correct answer (the whole completed sentence when the question is a Portuguese sentence with a blank).`;
 }
 
 // ---------- Quiz parsing ----------
@@ -117,6 +117,7 @@ function parseQuiz(text, { minQuestions = settings.questionCount } = {}) {
         q: text,
         options: shuffleArray(options),
         expected: String(opts[ans]),
+        translation: typeof q.translation === "string" ? q.translation.trim() : "",
         explain: q.explain || "",
         reviewOf: q.reviewOf || "",
       });
@@ -328,6 +329,7 @@ function record(q, given, correct, note, { skipped = false } = {}) {
   };
   add(correct ? "Correto! 🎉" : skipped ? `Resposta: ${q.expected}` : `Não exatamente. Resposta: ${q.expected}`, true);
   if (note) add(note);
+  if (q.translation) add(`Translation: ${q.translation}`);
   if (q.explain) add(q.explain);
   fb.hidden = false;
   $("next-btn").hidden = false;
@@ -359,7 +361,7 @@ function renderMisses(intro) {
   if (misses.length) reviewEl.append(el("p", intro));
   for (const r of misses) {
     const div = el("div", null, "review-item");
-    div.append(el("div", r.q, "q"), el("div", r.skipped ? "You: skipped" : `You: ${r.given}`, "yours"), el("div", `Correct: ${r.expected}`, "right"));
+    div.append(el("div", r.q, "q"), el("div", r.skipped ? "You: skipped" : `You: ${r.given}`, "yours"), el("div", `Correct: ${r.expected}${r.question.translation ? ` (${r.question.translation})` : ""}`, "right"));
     reviewEl.append(div);
   }
 }
@@ -880,6 +882,7 @@ function renderDaily() {
   $("daily-sections").replaceChildren(...dl.sections.map((s) => {
     const section = el("section");
     section.append(el("h4", s.heading), ...richText(s.body));
+    for (const t of s.tables || []) section.append(grammarTable(t));
     if (s.examples?.length) {
       const ul = el("ul", null, "examples");
       for (const ex of s.examples) {
@@ -1007,6 +1010,19 @@ function renderPractice() {
   }
 }
 
+function grammarTable({ headers, rows }) {
+  const table = el("table", null, "grammar-table");
+  const head = el("tr");
+  headers.forEach((h) => head.append(el("th", h)));
+  table.append(head);
+  for (const row of rows || []) {
+    const tr = el("tr");
+    row.forEach((c) => tr.append(el("td", c)));
+    table.append(tr);
+  }
+  return table;
+}
+
 // The selected practice lesson's digest, laid out for reading: summary, grammar, vocabulary.
 let overviewRequest = 0;
 async function renderOverview() {
@@ -1040,18 +1056,7 @@ async function renderOverview() {
   for (const g of d.grammar || []) {
     const section = el("section");
     section.append(el("h4", g.topic), ...richText(g.explanation));
-    if (g.table?.headers?.length) {
-      const table = el("table", null, "grammar-table");
-      const head = el("tr");
-      g.table.headers.forEach((h) => head.append(el("th", h)));
-      table.append(head);
-      for (const row of g.table.rows || []) {
-        const tr = el("tr");
-        row.forEach((c) => tr.append(el("td", c)));
-        table.append(tr);
-      }
-      section.append(table);
-    }
+    if (g.table?.headers?.length) section.append(grammarTable(g.table));
     if (g.examples?.length) {
       const ul = el("ul", null, "examples");
       for (const ex of g.examples) {

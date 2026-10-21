@@ -229,16 +229,49 @@ function dayOnLesson(progress, lessonIndex) {
   return days.size;
 }
 
+// The digest's tables are shown as they are rather than rewritten: Gemini only picks which section each goes in.
+function digestTables(digest) {
+  return (digest.grammar || []).filter((g) => g.table?.headers?.length).map((g) => ({ topic: g.topic, ...g.table }));
+}
+
+function dailySchema(tables) {
+  if (!tables.length) return DAILY_SCHEMA;
+  const section = DAILY_SCHEMA.properties.sections.items;
+  const tablesProp = { type: "ARRAY", items: { type: "STRING", format: "enum", enum: tables.map((t) => t.topic) } };
+  return {
+    ...DAILY_SCHEMA,
+    properties: {
+      ...DAILY_SCHEMA.properties,
+      sections: { type: "ARRAY", items: { ...section, properties: { ...section.properties, tables: tablesProp } } },
+    },
+  };
+}
+
+// Swaps the topic names Gemini picked for the tables themselves. Any table it didn't place goes in a last section.
+function attachTables(sections, tables) {
+  const byTopic = new Map(tables.map((t) => [t.topic, t]));
+  const placed = new Set();
+  const out = sections.map((s) => {
+    const picked = (s.tables || []).filter((t) => byTopic.has(t) && !placed.has(t));
+    picked.forEach((t) => placed.add(t));
+    return { ...s, tables: picked.map((t) => byTopic.get(t)) };
+  });
+  const rest = tables.filter((t) => !placed.has(t.topic));
+  if (rest.length) out.push({ heading: "Tables for this lesson", body: "", examples: [], tables: rest });
+  return out;
+}
+
 // Teaches only this lesson. Older mistakes are reviewed in the quiz, not here, so they aren't sent.
 async function generateDailyLesson({ apiKey, model, syllabus, lessonIndex, digest, progress, skipPronunciation }) {
   const day = dayOnLesson(progress, lessonIndex);
   const performance = performanceNotes(progress, lessonIndex);
   const variety = varietyOf(syllabus);
+  const tables = digestTables(digest);
   const text = await generateJson({
     apiKey,
     model,
     temperature: 0.8,
-    schema: DAILY_SCHEMA,
+    schema: dailySchema(tables),
     parts: [{
       text: `You are a friendly, clear Portuguese tutor. Write today's lesson for an English-speaking learner of ${variety}Portuguese. It should take 5-10 minutes to read.
 
@@ -251,7 +284,8 @@ Teach ONLY this lesson, from the digest below. Don't introduce grammar or vocabu
 - "title": a short, friendly title for today.
 - "intro": 2-3 sentences on what today covers.
 - "focus": 1-2 sentences on what to pay attention to in this lesson, based on my results on this lesson below, or "" if there are none.
-- "sections": 3-6 sections, each teaching one topic from this lesson. "body" is 1-3 short paragraphs separated by blank lines; use **bold** for key forms. 2-5 "examples" each, in ${variety}Portuguese with English.
+- "sections": 3-6 sections, each teaching one topic from this lesson. "body" is 1-3 short paragraphs separated by blank lines; use **bold** for key forms. 2-5 "examples" each, in ${variety}Portuguese with English.${tables.length ? `
+- "tables": the digest tables to show in this section, by topic name. The page shows each table exactly as the digest has it, so don't write its contents out in "body"; teach around it. Place every table, each in one section: ${tables.map((t) => `"${t.topic}"`).join(", ")}.` : ""}
 - "vocabulary": the 8-20 words and phrases to learn today, from this lesson, nouns with their article.
 - "practice": 4-6 quick self-check items with answers, all testing what this lesson's sections taught. Don't give away the answer in the item.
 - "recap": 2-3 sentences summing up.${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
@@ -260,7 +294,8 @@ LESSON DIGEST
 ${digestText(digest, { skipPronunciation })}`,
     }],
   });
-  return { ...JSON.parse(text), date: todayKey(), lessonIndex, lesson: syllabus.lessons[lessonIndex].title, day, generatedBy: model };
+  const dl = JSON.parse(text);
+  return { ...dl, sections: attachTables(dl.sections || [], tables), date: todayKey(), lessonIndex, lesson: syllabus.lessons[lessonIndex].title, day, generatedBy: model };
 }
 
 function dailyLessonText(d) {
@@ -289,6 +324,7 @@ const QUIZ_SCHEMA = {
           accept: { type: "ARRAY", items: { type: "STRING" } },
           explain: { type: "STRING" },
           reviewOf: { type: "STRING" },
+          translation: { type: "STRING" },
         },
         required: ["type", "q", "answer", "explain"],
       },
@@ -300,6 +336,7 @@ const QUIZ_SCHEMA = {
 const QUESTION_RULES = `- About 60% "mc" (multiple choice, 4 options, "answer" is the exact text of the correct option) and 40% "text" (translate English to Portuguese, fill in the blank, or conjugate a verb).
 - "text" answers must be short (one word up to one sentence). Put every reasonable alternative in "accept" (with/without subject pronoun, masculine/feminine, etc.).
 - "explain" is one short sentence in English teaching the rule.
+- For "mc", "translation" is a full, natural English translation of the correct answer. If the question is a Portuguese sentence with a blank, translate the whole completed sentence (e.g. "Ela ___ médica." with answer "é" → "She is a doctor."); otherwise translate the correct option itself (e.g. "o problema" → "the problem"). Leave it "" if the correct option is already English. Never give the translation away in the question.
 - Multiple choice must have exactly ONE correct option. Every other option must be clearly wrong: not a rewording of the correct answer, not another valid way to state the same rule (e.g. "drop the m and add ns" vs "change m to n and add s" are the same answer), and not correct under some reasonable reading. No duplicate options, and no "all of the above" / "none of the above".
 - Make the wrong options plausible mistakes a learner might actually make (wrong verb, wrong ending, wrong gender), so each question tests one clear point.
 - Options that lead to the same result count as the same answer (e.g. "change -m to -n and add -s" and "change -m to -ns" both turn homem into homens).
@@ -415,7 +452,7 @@ async function reviewQuiz({ apiKey, model, syllabus, digest, quizText, skipPronu
 
 Check every question:
 1. Multiple choice must have exactly ONE correct option. If two options are both correct, say the same thing in different words, or lead to the same result (e.g. "change -m to -n and add -s" vs "change -m to -ns"), replace the extra ones with clearly wrong but plausible options. "answer" must be exactly the correct option's text.
-2. The answer key must be correct ${variety}Portuguese, with correct accents. Fix any wrong answer.
+2. The answer key must be correct ${variety}Portuguese, with correct accents. Fix any wrong answer. For "mc", "translation" must be an accurate English translation of the correct answer (the whole completed sentence when the question is a Portuguese sentence with a blank); add or fix it.
 3. Written questions: "accept" must list every correct alternative (with or without the subject pronoun or article where the question allows it, masculine/feminine where the question is ambiguous) and nothing incorrect.
 4. Vocabulary hints: if a question gives the Portuguese for some words, it must give it for every word needed that isn't in the lesson vocabulary below, and say when two English words map to the same Portuguese word (e.g. "trip" and "voyage" are both viagem).
 5. No giveaways: a question must not contain its own answer or an obvious form of it. Check every example sentence inside a question: "Which verb states location, as in 'Isabel está na Europa'?" gives away ESTAR, and "Which verb expresses a profession, as in 'Ele é médico'?" gives away SER. Replace the giveaway word with a blank ("Isabel ___ na Europa"), or rewrite the question. Translation prompts must be fully in English apart from names, with no Portuguese from the answer in them and no hint that covers the point being tested: "Translate: 'Good morning, seu Antônio.' (use 'bom dia')" gives away the whole answer. Also check that the correct option isn't the only one that fits the question's grammar or wording, and that options don't carry markers that reveal the answer: for a gender question, "a casa / o problema / a aula / a porta" gives away the masculine noun through its article, so list bare nouns instead.
