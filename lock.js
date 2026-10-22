@@ -261,6 +261,8 @@ function answerMc(q, chosen) {
   record(q, chosen.text, chosen.correct);
 }
 
+const GEMINI_CHECK_SECONDS = 15;
+
 async function answerText() {
   const q = quiz.questions[idx];
   const input = $("text-answer");
@@ -278,10 +280,37 @@ async function answerText() {
   }
 
   // Not in the answer key. Ask Gemini whether it's still valid Portuguese for this question.
+  // If it's slow (busy retries can take minutes), offer self-grading after GEMINI_CHECK_SECONDS.
   const fb = $("feedback");
   fb.className = "feedback";
-  fb.textContent = "Not in the answer key. Checking with Gemini…";
   fb.hidden = false;
+  let settled = false;
+  const settle = (...args) => {
+    if (settled) return false;
+    settled = true;
+    clearInterval(timer);
+    record(...args);
+    return true;
+  };
+  let left = GEMINI_CHECK_SECONDS;
+  const status = () => (fb.textContent = `Not in the answer key. Checking with Gemini… ${left}s`);
+  status();
+  const timer = setInterval(() => {
+    if (--left > 0) return status();
+    clearInterval(timer);
+    fb.replaceChildren(
+      el("p", "Gemini is taking a while. Compare your answer with the answer key and grade yourself:"),
+      el("p", `Your answer: ${given}`),
+      el("p", `Answer key: ${q.expected}`),
+    );
+    const row = el("div", null, "row");
+    const right = el("button", "I was right", "primary");
+    const wrong = el("button", "I was wrong");
+    right.addEventListener("click", () => settle(q, given, true, "(Self-graded: Gemini took too long.)"));
+    wrong.addEventListener("click", () => settle(q, given, false, "(Self-graded: Gemini took too long.)"));
+    row.append(right, wrong);
+    fb.append(row);
+  }, 1000);
   try {
     const verdict = q.vocab
       ? await judgeVocab({ apiKey: settings.geminiApiKey, model: settings.geminiModel, pt: q.vocab.pt, en: q.vocab.en, given })
@@ -293,10 +322,9 @@ async function answerText() {
           accept: q.answers.slice(1),
           given,
         });
-    record(q, given, verdict.correct, verdict.feedback);
+    settle(q, given, verdict.correct, verdict.feedback);
   } catch {
-    record(q, given, false, "(Couldn't reach Gemini to double-check.)");
-    if (overridesLeft > 0) $("override-btn").hidden = false;
+    if (settle(q, given, false, "(Couldn't reach Gemini to double-check.)") && overridesLeft > 0) $("override-btn").hidden = false;
   }
 }
 
