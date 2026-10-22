@@ -7,6 +7,7 @@ const SYNCED_DEFAULTS = {
   passPercent: 80,
   advancePercent: 80,
   skipPronunciation: false,
+  sounds: true,
   geminiModel: "gemini-3.5-flash-lite",
   allowlist: [
     "wisc.pb.unizin.org",

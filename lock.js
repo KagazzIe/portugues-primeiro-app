@@ -315,8 +315,33 @@ function skip() {
   record(q, "", false, null, { skipped: true });
 }
 
+// Short synthesized chimes: two rising notes when right, a low falling tone when wrong.
+let audioCtx;
+function playSound(correct) {
+  if (!settings.sounds) return;
+  try {
+    audioCtx ||= new AudioContext();
+    const t0 = audioCtx.currentTime;
+    const notes = correct ? [[659, 0], [988, 0.09]] : [[311, 0], [233, 0.12]];
+    for (const [freq, delay] of notes) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = correct ? "sine" : "triangle";
+      osc.frequency.value = freq;
+      const start = t0 + delay;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + (correct ? 0.25 : 0.3));
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(start);
+      osc.stop(start + 0.32);
+    }
+  } catch {}
+}
+
 function record(q, given, correct, note, { skipped = false } = {}) {
   results[idx] = { question: q, q: q.q, given, correct, expected: q.expected, skipped };
+  if (!skipped) playSound(correct);
   $("skip-btn").hidden = true;
   const fb = $("feedback");
   fb.className = `feedback ${correct ? "good" : "bad"}`;

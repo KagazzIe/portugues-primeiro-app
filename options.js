@@ -12,6 +12,7 @@ async function render() {
   }
   $("allowlist").value = s.allowlist.join("\n");
   $("skipPronunciation").checked = !!s.skipPronunciation;
+  $("sounds").checked = s.sounds !== false;
   $("min-q").textContent = MIN_QUESTIONS;
   $("min-p").textContent = MIN_PASS_PERCENT;
 
@@ -170,6 +171,7 @@ $("save").addEventListener("click", async () => {
     passPercent: parseInt($("passPercent").value, 10),
     advancePercent: parseInt($("advancePercent").value, 10),
     skipPronunciation: $("skipPronunciation").checked,
+    sounds: $("sounds").checked,
     allowlist,
   });
   await mutate("settings", (cur) => {
