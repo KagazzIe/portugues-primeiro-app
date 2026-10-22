@@ -280,7 +280,7 @@ async function answerText() {
   }
 
   // Not in the answer key. Ask Gemini whether it's still valid Portuguese for this question.
-  // If it's slow (busy retries can take minutes), offer self-grading after GEMINI_CHECK_SECONDS.
+  // If it's slow (busy retries can take minutes), offer a button to self-grade after GEMINI_CHECK_SECONDS.
   const fb = $("feedback");
   fb.className = "feedback";
   fb.hidden = false;
@@ -298,8 +298,16 @@ async function answerText() {
   const timer = setInterval(() => {
     if (--left > 0) return status();
     clearInterval(timer);
+    const skipGemini = el("button", "Skip Gemini and grade myself");
+    skipGemini.addEventListener("click", selfGrade);
+    const row = el("div", null, "row");
+    row.append(skipGemini);
+    fb.replaceChildren(el("p", "Gemini is taking a while. Still checking…"), row);
+  }, 1000);
+  function selfGrade() {
+    if (settled) return;
     fb.replaceChildren(
-      el("p", "Gemini is taking a while. Compare your answer with the answer key and grade yourself:"),
+      el("p", "Compare your answer with the answer key and grade yourself:"),
       el("p", `Your answer: ${given}`),
       el("p", `Answer key: ${q.expected}`),
     );
@@ -310,7 +318,7 @@ async function answerText() {
     wrong.addEventListener("click", () => settle(q, given, false, "(Self-graded: Gemini took too long.)"));
     row.append(right, wrong);
     fb.append(row);
-  }, 1000);
+  }
   try {
     const verdict = q.vocab
       ? await judgeVocab({ apiKey: settings.geminiApiKey, model: settings.geminiModel, pt: q.vocab.pt, en: q.vocab.en, given })
