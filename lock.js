@@ -52,7 +52,7 @@ Rules:
 - Exactly ${n} questions, based on that lesson.
 - Mix roughly 60% multiple choice and 40% short written answers (translate English to Portuguese, fill in the blank, conjugate a verb).
 - Written answers must be short (one word up to one sentence) so they can be checked automatically. List every reasonable alternative in "accept" (with/without subject pronoun, masculine/feminine, etc.).
-- Each multiple-choice question has exactly ONE correct option. The others must be clearly wrong, never a rewording of the correct answer or another valid way to say the same thing. Check every question for this before you reply.
+- Each multiple-choice question has exactly ONE correct option. The others must be clearly wrong, never a rewording of the correct answer or another valid way to say the same thing. For a fill-in-the-blank, try every option in the blank: if more than one makes a correct sentence (e.g. "a mim / a ti / a ela" when nothing says who is meant), add context to the question that picks one. Check every question for this before you reply.
 - Respond with ONLY valid JSON. No markdown, no commentary. Use exactly this shape:
 
 {"lesson":"short lesson title","questions":[
@@ -285,6 +285,9 @@ async function answerText() {
   fb.className = "feedback";
   fb.hidden = false;
   let settled = false;
+  let timer;
+  const offline = quiz.source === "offline";
+  const selfNote = offline ? "(Self-graded: quiz built without Gemini.)" : "(Self-graded: Gemini took too long.)";
   const settle = (...args) => {
     if (settled) return false;
     settled = true;
@@ -292,10 +295,11 @@ async function answerText() {
     record(...args);
     return true;
   };
+  if (offline) return selfGrade();
   let left = GEMINI_CHECK_SECONDS;
   const status = () => (fb.textContent = `Not in the answer key. Checking with Gemini… ${left}s`);
   status();
-  const timer = setInterval(() => {
+  timer = setInterval(() => {
     if (--left > 0) return status();
     clearInterval(timer);
     const skipGemini = el("button", "Skip Gemini and grade myself");
@@ -314,8 +318,8 @@ async function answerText() {
     const row = el("div", null, "row");
     const right = el("button", "I was right", "primary");
     const wrong = el("button", "I was wrong");
-    right.addEventListener("click", () => settle(q, given, true, "(Self-graded: Gemini took too long.)"));
-    wrong.addEventListener("click", () => settle(q, given, false, "(Self-graded: Gemini took too long.)"));
+    right.addEventListener("click", () => settle(q, given, true, selfNote));
+    wrong.addEventListener("click", () => settle(q, given, false, selfNote));
     row.append(right, wrong);
     fb.append(row);
   }
@@ -401,6 +405,7 @@ function record(q, given, correct, note, { skipped = false } = {}) {
 function override() {
   overridesLeft--;
   results[idx].correct = true;
+  results[idx].overridden = true;
   $("override-btn").hidden = true;
   const fb = $("feedback");
   fb.className = "feedback good";
@@ -410,8 +415,70 @@ function override() {
 function next() {
   idx++;
   if (idx < quiz.questions.length) renderQuestion();
+  else if (idx === quiz.questions.length && checkMisses()) return; // "Save results" calls next() again
   else finish();
 }
+
+// Before anything is saved: list the questions marked wrong, so one the quiz got wrong (an ambiguous
+// question, a valid answer missing from the key) can be counted as right. Uses the same per-quiz
+// allowance as the "My answer was actually right" button. Skipped questions can't be marked.
+// Returns false (nothing shown) when there's nothing to mark.
+function checkMisses() {
+  const misses = results.map((r, i) => ({ r, i })).filter(({ r }) => !r.correct && !r.skipped);
+  if (!misses.length || overridesLeft <= 0) return false;
+
+  const marked = new Set();
+  const allowance = overridesLeft;
+  $("q-progress").textContent = "Before saving";
+  $("q-bar").style.width = "100%";
+  $("q-text").textContent = "Check your answers";
+  for (const id of ["feedback", "check-btn", "skip-btn", "override-btn"]) $(id).hidden = true;
+  $("next-btn").hidden = false;
+  $("next-btn").textContent = "Save results";
+
+  const area = $("q-answer");
+  const hint = el("p", null, "hint");
+  const buttons = [];
+  const update = () => {
+    const left = allowance - marked.size;
+    hint.textContent = `If a question was ambiguous or your answer was also right, mark it as right. ${left} of ${allowance} left for this quiz.`;
+    buttons.forEach((b, n) => {
+      const on = marked.has(misses[n].i);
+      b.textContent = on ? "Counted as right ✓ (undo)" : "Mark as right";
+      b.classList.toggle("primary", on);
+      b.disabled = !on && left <= 0;
+    });
+  };
+  area.replaceChildren(hint);
+  for (const { r, i } of misses) {
+    const div = el("div", null, "review-item");
+    const b = el("button", "Mark as right");
+    b.addEventListener("click", () => {
+      if (marked.has(i)) marked.delete(i);
+      else marked.add(i);
+      update();
+    });
+    buttons.push(b);
+    const row = el("div", null, "row");
+    row.append(b);
+    div.append(
+      el("div", r.q, "q"),
+      el("div", `You: ${r.given}`, "yours"),
+      el("div", `Answer key: ${r.expected}${r.question.translation ? ` (${r.question.translation})` : ""}`, "right"),
+      row
+    );
+    area.append(div);
+  }
+  update();
+
+  // Applied when "Save results" is pressed, just before the results are saved.
+  pendingMarks = () => {
+    for (const i of marked) Object.assign(results[i], { correct: true, overridden: true });
+    overridesLeft -= marked.size;
+  };
+  return true;
+}
+let pendingMarks = null;
 
 const kindOf = (q) => (!q.reviewOf ? "new" : q.reviewOf === "earlier" ? "earlier" : "review");
 
@@ -507,6 +574,8 @@ async function finishVocab() {
 }
 
 async function finish() {
+  pendingMarks?.();
+  pendingMarks = null;
   if (quizMode === "practice") return finishPractice();
   if (quizMode === "review") return finishReview();
   if (quizMode === "vocab") return finishVocab();
@@ -577,6 +646,7 @@ async function finish() {
       given: r.given,
       skipped: r.skipped,
       correct: r.correct,
+      ...(r.overridden ? { overridden: true } : {}),
       expected: r.expected,
       explain: r.question.explain,
     })),
@@ -660,6 +730,7 @@ function startPreparedQuiz(prepared, { mode, lessonIndex, extra = {} }) {
   idx = 0;
   results = [];
   overridesLeft = MAX_OVERRIDES;
+  pendingMarks = null;
   show("quiz-view");
   renderQuestion();
 }
@@ -1181,6 +1252,60 @@ function startReview() {
   generateWithGemini({ mode: "review", ids: ["review-btn", "review-status", "review-error"] });
 }
 
+// Fallback for when Gemini is down: builds the review quiz locally. Due review items are asked again as
+// written, then the rest is filled with exercises from earlier lessons' digests. Answers not in the key are
+// self-graded (see answerText), since there's no Gemini to judge them.
+async function startOfflineReview() {
+  const [btn, status, err] = ["review-offline-btn", "review-status", "review-error"].map($);
+  err.hidden = true;
+  btn.disabled = true;
+  status.textContent = "Building a review quiz without Gemini…";
+  try {
+    if (!syllabus) throw new Error("The lessons haven't loaded yet.");
+    const n = settings.questionCount;
+    const questions = dueMistakes(review, n).map((m) => ({
+      type: "text",
+      q: m.q,
+      answers: [String(m.expected)],
+      expected: String(m.expected),
+      explain: m.explain || "",
+      reviewOf: m.id,
+    }));
+    // Take exercises round-robin across the earlier lessons checked longest ago.
+    const earlier = (await earlierWithDigests(currentLesson, 3))
+      .map((e) => ({ lesson: e.lesson, exercises: shuffleArray((e.digest?.exercises || []).filter((x) => x.prompt && x.answer)) }))
+      .filter((e) => e.exercises.length);
+    const used = new Set();
+    while (questions.length < n && earlier.some((e) => e.exercises.length)) {
+      for (const e of earlier) {
+        const x = e.exercises.shift();
+        if (!x || questions.length >= n) continue;
+        used.add(lessonSlug(e.lesson));
+        questions.push({
+          type: "text",
+          q: x.prompt,
+          answers: [String(x.answer)],
+          expected: String(x.answer),
+          explain: `From ${e.lesson.title}.`,
+          reviewOf: "earlier",
+        });
+      }
+    }
+    if (!questions.length) throw new Error("Nothing to review yet.");
+    const hash = hashString(JSON.stringify(questions.map((q) => q.q)));
+    startPreparedQuiz(
+      { lesson: "Review", hash, questions: shuffleArray(questions), source: "offline" },
+      { mode: "review", lessonIndex: null, extra: { reviewLessons: [...used] } },
+    );
+  } catch (e) {
+    err.textContent = e.message;
+    err.hidden = false;
+  } finally {
+    btn.disabled = false;
+    status.textContent = "";
+  }
+}
+
 // "Today's quizzes": a check per task. The review and vocab quizzes are ticked off automatically when
 // there's nothing for them to test yet (early in the book, or no Gemini key for the review quiz).
 let renderTasksRun = 0;
@@ -1208,6 +1333,7 @@ async function renderTasks() {
   const canReview = hasGemini && (due > 0 || hasEarlier);
   mark("review", reviewDone);
   $("review-btn").hidden = reviewDone || !canReview;
+  $("review-offline-btn").hidden = reviewDone || !canReview;
   $("review-summary").textContent = reviewDone
     ? "Done today."
     : due
@@ -1291,6 +1417,7 @@ function wire() {
   $("generate-quiz").addEventListener("click", () => generateWithGemini());
   $("practice-btn").addEventListener("click", startPractice);
   $("review-btn").addEventListener("click", startReview);
+  $("review-offline-btn").addEventListener("click", startOfflineReview);
   $("vocab-btn").addEventListener("click", () => startVocab());
   $("practice-lesson").addEventListener("change", renderOverview);
   $("overview-original").addEventListener("click", () => {
