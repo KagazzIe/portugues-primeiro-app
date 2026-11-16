@@ -545,7 +545,11 @@ async function finishReview() {
   review = await mutate("review", (r) => applyReviews(r, results, null, `${today}-review-${quiz.hash}`), message);
   const cleared = [...results.filter((r) => r.correct && r.question.lessonSlug).map((r) => r.question.lessonSlug), ...(quiz.freeLessons || [])];
   const all = reviewSlugs();
-  progress = await mutate("progress", (p) => withReviewRound(p, cleared, all), message);
+  progress = await mutate(
+    "progress",
+    (p) => withAskedQuestions(withReviewRound(p, cleared, all), results, (r) => r.question.lessonSlug),
+    message
+  );
   renderStreak();
   renderSyncStatus();
   const left = reviewLeft(progress, all);
@@ -627,6 +631,8 @@ async function finish() {
       usedQuizHashes: [quiz.hash, ...(p.usedQuizHashes || []).filter((h) => h !== quiz.hash)].slice(0, 200),
       recentQuestions: [...quiz.questions.map((q) => q.q), ...(p.recentQuestions || [])].slice(0, 40),
     };
+    const slug = syllabus?.lessons[lessonIndex] ? lessonSlug(syllabus.lessons[lessonIndex]) : "";
+    nextP = withAskedQuestions(nextP, results, () => slug);
     if (passed) {
       nextP = withTaskDone(nextP, "lesson");
       const nextIndex = syllabus ? nextLessonIndex(syllabus, lessonIndex) : -1;

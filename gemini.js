@@ -379,11 +379,42 @@ function performanceNotes(progress, lessonIndex) {
     .join("\n");
 }
 
+// Questions asked in the last few days (recentAsked entries), so a new quiz doesn't repeat them.
+// Ones answered right are off limits; ones answered wrong may be tested again with a new sentence.
+function askedSection(asked, { brief = false } = {}) {
+  const right = asked.filter((a) => a.correct).slice(0, 40).map((a) => a.q);
+  const wrong = asked.filter((a) => !a.correct).slice(0, 20).map((a) => a.q);
+  if (!right.length && !wrong.length) return "";
+  const list = (qs) => qs.map((q) => `  - ${q}`).join("\n");
+  if (brief) {
+    return [
+      right.length ? `\nRecently answered RIGHT (don't ask these or anything close to them):\n${list(right)}` : "",
+      wrong.length ? `\nRecently answered wrong (the same point is fine, but use a new sentence):\n${list(wrong)}` : "",
+    ].join("");
+  }
+  return [
+    "\nQUESTIONS I'VE HAD ON THIS LESSON IN THE LAST FEW DAYS",
+    right.length ? `I got these right. Don't ask them again or anything close to them (the same sentence, or the same sentence with a word or two changed). Test other points, other vocabulary, and new sentences instead:\n${list(right)}` : "",
+    wrong.length ? `I got these wrong. You may test the same points again, but with new sentences:\n${list(wrong)}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+// The rule that goes with askedSection. Until there's a log of asked questions, falls back to the older
+// list of recent questions (which doesn't say which were right).
+function noRepeatRule(progress, asked) {
+  if (asked.length) {
+    return "\n- Never repeat or closely copy a question listed as one I recently got right. Prefer points and sentences I haven't been asked in the last few days.";
+  }
+  const recent = progress.recentQuestions || [];
+  return recent.length ? `\n- Don't repeat any of these recent questions:\n${recent.slice(0, 20).map((q) => `  - ${q}`).join("\n")}` : "";
+}
+
 // The daily (and practice) quiz: today's lesson only. Older material is covered by the review quiz.
 async function generateLessonQuiz({ apiKey, model, syllabus, lessonIndex, digest, dailyLesson, progress, n, skipPronunciation }) {
   const lesson = syllabus.lessons[lessonIndex];
   const performance = performanceNotes(progress, lessonIndex);
   const variety = varietyOf(syllabus);
+  const asked = recentAsked(progress, lessonSlug(lesson));
 
   const prompt = `You are a Portuguese tutor writing today's quiz for an English-speaking learner studying ${variety}Portuguese with the textbook "${syllabus.title}". Use ${variety}Portuguese spelling and vocabulary.
 
@@ -407,7 +438,8 @@ Rules:
 ${QUESTION_RULES}
 - Base the questions on what I was taught today, using new sentences rather than copying its examples. The digest is the full reference for this lesson.
 - Only use vocabulary and grammar from this lesson (plus basics it relies on).${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
-- "lesson" is "${lesson.title}".${progress.recentQuestions?.length ? `\n- Don't repeat any of these recent questions:\n${progress.recentQuestions.slice(0, 20).map((q) => `  - ${q}`).join("\n")}` : ""}`;
+- "lesson" is "${lesson.title}".${noRepeatRule(progress, asked)}
+${askedSection(asked)}`;
 
   return generateJson({ apiKey, model, parts: [{ text: prompt }], schema: QUIZ_SCHEMA, temperature: 1 });
 }
@@ -444,7 +476,7 @@ async function generateReviewQuiz({ apiKey, model, syllabus, items, progress, sk
     const body = it.digest ? digestText(it.digest, { brief: true }) : it.lesson.title;
     const m = it.mistake;
     const miss = m ? `\nI GOT THIS WRONG BEFORE [${m.id}]: Question: ${m.q} | Correct answer: ${m.expected}${m.explain ? ` | Rule: ${m.explain}` : ""}` : "";
-    return `### lessonId: ${it.id}\n${body}${miss}`;
+    return `### lessonId: ${it.id}\n${body}${miss}${askedSection(recentAsked(progress, it.id), { brief: true })}`;
   });
 
   const prompt = `You are a Portuguese tutor writing a review quiz for an English-speaking learner studying ${variety}Portuguese with the textbook "${syllabus.title}". Use ${variety}Portuguese spelling and vocabulary.
@@ -459,7 +491,7 @@ ${blocks.join("\n\n")}
 
 Rules:
 ${OPEN_QUESTION_RULES}${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
-- "lesson" is "Review".${progress.recentQuestions?.length ? `\n- Don't repeat any of these recent questions:\n${progress.recentQuestions.slice(0, 20).map((q) => `  - ${q}`).join("\n")}` : ""}`;
+- "lesson" is "Review".${noRepeatRule(progress, items.flatMap((it) => recentAsked(progress, it.id)))}`;
 
   return generateJson({ apiKey, model, parts: [{ text: prompt }], schema: reviewSchema(items.map((it) => it.id)), temperature: 1 });
 }

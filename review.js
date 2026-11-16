@@ -135,3 +135,33 @@ function applyVocab(vocabDoc, results) {
   }
   return { ...vocabDoc, words };
 }
+
+// ---------- Recently asked questions ----------
+// progress.askedQuestions: [{ date, lesson (slug), q, correct }], newest first, for the last few days. Quiz
+// prompts list them so Gemini doesn't ask the same questions again (especially ones answered right).
+
+const ASKED_DAYS = 3; // today plus the 3 days before
+
+const askedSince = () => addDays(todayKey(), -ASKED_DAYS);
+
+// Pure: adds a finished quiz's questions. slugOf(result) gives the lesson each question was on.
+function withAskedQuestions(progress, results, slugOf) {
+  const today = todayKey();
+  const added = results
+    .map((r) => ({ date: today, lesson: slugOf(r) || "", q: r.q, correct: !!r.correct }))
+    .filter((a) => a.q);
+  const since = askedSince();
+  const kept = (progress.askedQuestions || []).filter((a) => a.date >= since);
+  return { ...progress, askedQuestions: [...added, ...kept].slice(0, 400) };
+}
+
+// The recently asked questions on one lesson (by slug), newest first, without duplicates.
+function recentAsked(progress, slug) {
+  const since = askedSince();
+  const seen = new Set();
+  return (progress?.askedQuestions || []).filter((a) => {
+    if (a.date < since || a.lesson !== slug || seen.has(a.q)) return false;
+    seen.add(a.q);
+    return true;
+  });
+}
