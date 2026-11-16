@@ -177,7 +177,7 @@ const RELAY_URL = "https://kagazzie.github.io/portugues-primeiro-app/player.html
 function playerSource(videoId) {
   const useRelay = new URLSearchParams(location.search).has("relay");
   if (window.IS_WEB_APP && !useRelay) {
-    const params = new URLSearchParams({ enablejsapi: "1", playsinline: "1", rel: "0", iv_load_policy: "3", cc_load_policy: "0", hl: "pt-BR", origin: location.origin });
+    const params = new URLSearchParams({ enablejsapi: "1", playsinline: "1", rel: "0", iv_load_policy: "3", cc_load_policy: "0", fs: "0", hl: "pt-BR", origin: location.origin });
     return { src: `https://www.youtube.com/embed/${videoId}?${params}`, origins: ["https://www.youtube.com", "https://www.youtube-nocookie.com"] };
   }
   const relay = new URL(useRelay ? "player.html" : RELAY_URL, location.href);
@@ -285,7 +285,7 @@ class YouTubePlayer {
 // ---------- Watching one video ----------
 
 const PREF_KEY = "watch:prefs";
-let prefs = { showEn: true, pauseEach: false, follow: true, rate: 1 };
+let prefs = { showEn: true, pauseEach: false, follow: true, rate: 1, overlay: true };
 let captions = null; // caption file
 let player = null;
 let active = -1;       // index of the line being shown
@@ -310,17 +310,9 @@ function lineAt(t) {
   return ans;
 }
 
-function renderNow() {
-  const line = captions.lines[active];
-  const pt = $("now-pt");
-  pt.textContent = "";
-  $("gloss").hidden = true;
-  if (!line) {
-    pt.textContent = "…";
-    $("now-en").textContent = "";
-    return;
-  }
-  // Each word is a button that looks itself up; punctuation and spaces stay plain text.
+// Each word is a button that looks itself up; punctuation and spaces stay plain text.
+function renderWords(el, line) {
+  el.textContent = "";
   for (const part of line.pt.split(/([\p{L}\p{M}\p{N}]+(?:[-'’][\p{L}\p{M}]+)*)/u)) {
     if (!part) continue;
     if (/^[\p{L}\p{N}]/u.test(part)) {
@@ -328,10 +320,25 @@ function renderNow() {
       w.className = "word";
       w.textContent = part;
       w.addEventListener("click", () => lookUp(part, line.pt));
-      pt.append(w);
-    } else pt.append(part);
+      el.append(w);
+    } else el.append(part);
   }
+}
+
+// The current line, in the card under the video and on the video itself.
+function renderNow() {
+  const line = captions.lines[active];
+  $("gloss").hidden = true;
+  $("overlay").hidden = !line;
+  if (!line) {
+    $("now-pt").textContent = "…";
+    $("now-en").textContent = "";
+    return;
+  }
+  renderWords($("now-pt"), line);
+  renderWords($("ov-pt"), line);
   $("now-en").textContent = line.en;
+  $("ov-en").textContent = line.en;
 }
 
 function setActive(i, { scroll = prefs.follow } = {}) {
@@ -432,7 +439,21 @@ function applyPrefs() {
   $("show-en").checked = prefs.showEn;
   $("pause-each").checked = prefs.pauseEach;
   $("follow").checked = prefs.follow;
+  $("on-video").checked = prefs.overlay;
+  document.body.classList.toggle("captions-on-video", prefs.overlay);
+  // Word lookups show where the captions are, so they're visible in fullscreen too.
+  if (prefs.overlay) $("overlay").prepend($("gloss"));
+  else $("now-en").after($("gloss"));
   $("speed").textContent = `Speed ${prefs.rate}×`;
+}
+
+// Fullscreen for the video and the captions on it together. (YouTube's own button would leave the captions
+// behind, so it's hidden.) iPhones only allow fullscreen for a bare video, so there the button is hidden.
+const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+function toggleFullscreen() {
+  const box = document.querySelector(".player");
+  if (fullscreenElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  else (box.requestFullscreen || box.webkitRequestFullscreen).call(box);
 }
 
 async function openVideo(id) {
@@ -538,7 +559,10 @@ function wire() {
     applyPrefs();
     savePrefs();
   });
-  for (const [id, key] of [["show-en", "showEn"], ["pause-each", "pauseEach"], ["follow", "follow"]]) {
+  const box = document.querySelector(".player");
+  $("fullscreen").hidden = !(box.requestFullscreen || box.webkitRequestFullscreen);
+  $("fullscreen").addEventListener("click", toggleFullscreen);
+  for (const [id, key] of [["show-en", "showEn"], ["pause-each", "pauseEach"], ["follow", "follow"], ["on-video", "overlay"]]) {
     $(id).addEventListener("change", () => {
       prefs[key] = $(id).checked;
       if (key === "pauseEach") pausedAfter = active; // don't stop straight away at the current line
@@ -552,6 +576,7 @@ function wire() {
     if (e.key === "r" || e.key === "R") goToLine(Math.max(0, active));
     else if (e.key === "ArrowLeft") goToLine(Math.max(0, active - 1));
     else if (e.key === "ArrowRight") goToLine(Math.min(captions.lines.length - 1, active + 1));
+    else if (e.key === "f" || e.key === "F") toggleFullscreen();
     else if (e.key === "e" || e.key === "E") {
       prefs.showEn = !prefs.showEn;
       applyPrefs();

@@ -193,3 +193,29 @@ button.word:hover { background: var(--green-soft); color: var(--green); }
   .caption-controls button { padding: 6px 10px; }
   .now-pt { font-size: 1.2rem; }
 }
+
+/* Captions on the video. Clicks pass through to YouTube's controls except on the words themselves. */
+.overlay {
+  position: absolute; left: 4%; right: 4%; bottom: 72px; z-index: 1;
+  text-align: center; pointer-events: none;
+}
+.overlay[hidden] { display: none; }
+.ov-line { margin: 0; line-height: 1.5; }
+.ov-pt, .ov-en {
+  background: rgba(0, 0, 0, .78); color: #fff; padding: 2px 8px; border-radius: 4px;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.ov-pt { font-size: clamp(.95rem, 2.6vw, 1.45rem); font-weight: 600; }
+.ov-en { font-size: clamp(.8rem, 2vw, 1.05rem); color: #e4e4e4; }
+.overlay button.word { pointer-events: auto; color: #fff; }
+.overlay button.word:hover { background: rgba(255, 255, 255, .2); color: #fff; }
+.overlay .gloss { display: inline-block; margin: 0 0 6px; text-align: left; max-width: 100%; background: rgba(0, 0, 0, .85); color: #fff; }
+.overlay .gloss .hint { color: #ccc; }
+.gloss[hidden] { display: none; }
+body:not(.captions-on-video) .overlay { display: none; }
+.captions-on-video .now-card .now-pt, .captions-on-video .now-card .now-en { display: none; }
+.hide-en .ov-en { display: none; }
+.player:fullscreen { aspect-ratio: auto; border-radius: 0; }
+.player:fullscreen .overlay { bottom: 90px; }
+.player:fullscreen .ov-pt { font-size: 2.2rem; }
+.player:fullscreen .ov-en { font-size: 1.5rem; }
