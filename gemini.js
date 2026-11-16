@@ -347,6 +347,16 @@ const QUESTION_RULES = `- About 60% "mc" (multiple choice, 4 options, "answer" i
 - Translation prompts must be fully in English apart from names: never put Portuguese from the answer in the English sentence (titles like seu/dona, the target word or form), and hints must never cover the point being tested. "Translate: 'Good morning, seu Antônio.' (use 'bom dia')" gives away the whole answer; ask "Say 'Good morning, Mr. Antônio' to an older man, using the respectful title." instead.
 - Before you answer, check every question: if a multiple-choice question has two acceptable options (try each one in the blank), a written question has an answer missing from "accept", or a question gives away its answer, fix it or replace the question.`;
 
+// The review quiz is all open-ended: the learner types every answer.
+const OPEN_QUESTION_RULES = `- Every question is "type": "text" (open-ended): no multiple choice and no "options". Good kinds: translate an English sentence into Portuguese, fill in the blank, conjugate or change a form (plural, feminine, another person), or answer a short question in Portuguese.
+- Answers must be short (one word up to one sentence) so they can be checked. Put every reasonable alternative in "accept" (with/without subject pronoun, masculine/feminine, etc.).
+- Each question must have one clear answer. For a fill-in-the-blank, say which meaning, person, or form is wanted when more than one word would fit (e.g. "Complete so it means 'to her': O diretor entregou o prêmio ___."), or list every answer that fits in "accept".
+- "explain" is one short sentence in English teaching the rule. Leave "translation" "".
+- If a question gives Portuguese for some words, it must give it for every word the learner needs that isn't in that lesson's vocabulary.
+- Never give away the answer. An example in the question must not already contain it: no conjugated form of the verb being asked about, and no Portuguese for the word being translated. Use a blank instead.
+- Translation prompts must be fully in English apart from names: never put Portuguese from the answer in the English sentence, and hints must never cover the point being tested.
+- Before you answer, check every question: if a question has a correct answer missing from "accept", or gives away its answer, fix it.`;
+
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function shuffleArray(arr) {
@@ -401,53 +411,70 @@ ${QUESTION_RULES}
   return generateJson({ apiKey, model, parts: [{ text: prompt }], schema: QUIZ_SCHEMA, temperature: 1 });
 }
 
-// The review quiz: a new question for each due review item, topped up with earlier-lesson questions.
-// due: review items to test; earlier: [{ lesson, digest|null }]. Returns { text, count }.
-async function generateReviewQuiz({ apiKey, model, syllabus, due, earlier, progress, n, skipPronunciation }) {
+// Review quiz schema: open-ended questions only, each tagged with the lesson it reviews.
+function reviewSchema(lessonIds) {
+  const item = QUIZ_SCHEMA.properties.questions.items;
+  const { options, translation, ...props } = item.properties;
+  return {
+    ...QUIZ_SCHEMA,
+    properties: {
+      ...QUIZ_SCHEMA.properties,
+      questions: {
+        type: "ARRAY",
+        items: {
+          ...item,
+          properties: {
+            ...props,
+            type: { type: "STRING", enum: ["text"] },
+            lessonId: { type: "STRING", format: "enum", enum: lessonIds },
+          },
+          required: [...item.required, "lessonId"],
+        },
+      },
+    },
+  };
+}
+
+// The review quiz: one open-ended question per earlier lesson.
+// items: [{ id, lesson, digest|null, mistake|null }]. A lesson with a due mistake gets a new question on that point.
+async function generateReviewQuiz({ apiKey, model, syllabus, items, progress, skipPronunciation }) {
   const variety = varietyOf(syllabus);
-  const reviewCount = Math.min(due.length, n);
-  const earlierCount = earlier.length ? n - reviewCount : 0;
-  const count = reviewCount + earlierCount;
-  const sections = [];
-  if (reviewCount) {
-    sections.push(`- ${plural(reviewCount, "question")}, one for each item I got wrong before (listed below). Write a NEW question testing the same point with a different sentence or wording. Set "reviewOf" to the item's id.`);
-  }
-  if (earlierCount) {
-    sections.push(`- ${plural(earlierCount, "question")} reviewing the earlier lessons below, spread across them. Set "reviewOf" to "earlier".`);
-  }
+  const blocks = items.map((it) => {
+    const body = it.digest ? digestText(it.digest, { brief: true }) : it.lesson.title;
+    const m = it.mistake;
+    const miss = m ? `\nI GOT THIS WRONG BEFORE [${m.id}]: Question: ${m.q} | Correct answer: ${m.expected}${m.explain ? ` | Rule: ${m.explain}` : ""}` : "";
+    return `### lessonId: ${it.id}\n${body}${miss}`;
+  });
 
   const prompt = `You are a Portuguese tutor writing a review quiz for an English-speaking learner studying ${variety}Portuguese with the textbook "${syllabus.title}". Use ${variety}Portuguese spelling and vocabulary.
-${reviewCount ? `
-ITEMS I GOT WRONG BEFORE
-${due.slice(0, reviewCount).map((m) => `  [${m.id}] Question: ${m.q} | Correct answer: ${m.expected}${m.explain ? ` | Rule: ${m.explain}` : ""}`).join("\n")}
-` : ""}${earlierCount ? `
-EARLIER LESSONS
-${earlier.map((e) => (e.digest ? digestText(e.digest, { brief: true }) : e.lesson.title)).join("\n\n")}
-` : ""}
-Write exactly ${plural(count, "question")}:
-${sections.join("\n")}
+
+Write exactly ${plural(items.length, "question")}: ONE question for each lesson below, in the order listed. Set "lessonId" to that lesson's id.
+- If a lesson shows something I got wrong before, write a NEW question testing that same point with a different sentence or wording, and set "reviewOf" to its id (the text in square brackets).
+- Otherwise test something central to that lesson (a key grammar point or useful vocabulary), and set "reviewOf" to "earlier".
+- Each question must only need that lesson's material (plus basics from before it).
+
+LESSONS
+${blocks.join("\n\n")}
 
 Rules:
-${QUESTION_RULES}
-- Only use vocabulary and grammar from the lessons and items above.${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
+${OPEN_QUESTION_RULES}${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
 - "lesson" is "Review".${progress.recentQuestions?.length ? `\n- Don't repeat any of these recent questions:\n${progress.recentQuestions.slice(0, 20).map((q) => `  - ${q}`).join("\n")}` : ""}`;
 
-  const text = await generateJson({ apiKey, model, parts: [{ text: prompt }], schema: QUIZ_SCHEMA, temperature: 1 });
-  return { text, count };
+  return generateJson({ apiKey, model, parts: [{ text: prompt }], schema: reviewSchema(items.map((it) => it.id)), temperature: 1 });
 }
 
 // ---------- Quiz review ----------
 // A second pass that checks a generated quiz against a checklist and returns a corrected copy.
 
 // problems: optional specific issues found by the extension's own checks, to fix first.
-async function reviewQuiz({ apiKey, model, syllabus, digest, quizText, skipPronunciation, problems = [] }) {
+async function reviewQuiz({ apiKey, model, syllabus, digest, quizText, skipPronunciation, problems = [], schema = QUIZ_SCHEMA }) {
   const variety = varietyOf(syllabus);
   const vocab = (digest?.vocabulary || []).map((v) => `${v.pt} = ${v.en}`).join("; ");
   return generateJson({
     apiKey,
     model,
     temperature: 0,
-    schema: QUIZ_SCHEMA,
+    schema,
     parts: [{
       text: `You are checking a ${variety}Portuguese quiz another tutor wrote, before a learner takes it. Return the full quiz in the same JSON shape, fixing any problems.
 
@@ -459,7 +486,7 @@ Check every question:
 5. No giveaways: a question must not contain its own answer or an obvious form of it. Check every example sentence inside a question: "Which verb states location, as in 'Isabel está na Europa'?" gives away ESTAR, and "Which verb expresses a profession, as in 'Ele é médico'?" gives away SER. Replace the giveaway word with a blank ("Isabel ___ na Europa"), or rewrite the question. Translation prompts must be fully in English apart from names, with no Portuguese from the answer in them and no hint that covers the point being tested: "Translate: 'Good morning, seu Antônio.' (use 'bom dia')" gives away the whole answer. Also check that the correct option isn't the only one that fits the question's grammar or wording, and that options don't carry markers that reveal the answer: for a gender question, "a casa / o problema / a aula / a porta" gives away the masculine noun through its article, so list bare nouns instead.
 6. Each question must be answerable from its own text and must stick to the lesson.${skipPronunciation ? "\n7. No pronunciation questions (sounds, stress, syllables, which accent mark a word takes). Replace any with a question on the lesson's grammar or vocabulary." : ""}
 
-Keep the same number of questions in the same order, and keep each question's "type", "reviewOf", and the quiz's "lesson". Only rewrite or replace questions that have a problem; leave good ones exactly as they are.
+Keep the same number of questions in the same order, and keep each question's "type", "reviewOf", "lessonId" (if it has one), and the quiz's "lesson". Only rewrite or replace questions that have a problem; leave good ones exactly as they are.
 ${problems.length ? `
 THESE PROBLEMS WERE FOUND AUTOMATICALLY. Fix them first by rewriting those questions so the answer isn't in the question:
 ${problems.map((p) => `- ${p}`).join("\n")}

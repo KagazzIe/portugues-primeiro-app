@@ -40,13 +40,32 @@ function applyReviews(review, results, lessonIndex, newId) {
         q: question.q,
         expected: question.expected,
         explain: question.explain,
-        lesson: lessonIndex,
+        lesson: question.lessonIndex ?? lessonIndex,
         box: 0,
         due: addDays(today, REVIEW_INTERVALS[0]),
       });
     }
   });
   return { ...review, mistakes: [...byId.values()].slice(-300) };
+}
+
+// ---------- Review quiz rounds ----------
+// The review quiz asks one open question per earlier lesson. A lesson answered right is cleared for the day;
+// the rest come back in another round until every lesson is cleared. progress.reviewCleared: { date, lessons: [slug] }.
+
+const clearedToday = (progress) => (progress?.reviewCleared?.date === todayKey() ? progress.reviewCleared.lessons || [] : []);
+
+// slugs: every lesson the review quiz covers. Returns the ones still to clear today.
+const reviewLeft = (progress, slugs) => {
+  const cleared = new Set(clearedToday(progress));
+  return slugs.filter((s) => !cleared.has(s));
+};
+
+// Pure: records the lessons answered right this round; once none are left, the review task is done.
+function withReviewRound(progress, clearedSlugs, allSlugs) {
+  const lessons = [...new Set([...clearedToday(progress), ...clearedSlugs])];
+  const p = { ...progress, reviewCleared: { date: todayKey(), lessons } };
+  return reviewLeft(p, allSlugs).length ? p : withTaskDone(p, "review");
 }
 
 // ---------- Daily completion ----------

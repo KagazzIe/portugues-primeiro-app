@@ -120,6 +120,7 @@ function parseQuiz(text, { minQuestions = settings.questionCount } = {}) {
         translation: typeof q.translation === "string" ? q.translation.trim() : "",
         explain: q.explain || "",
         reviewOf: q.reviewOf || "",
+        lessonId: q.lessonId || "",
       });
     } else {
       if (!q.answer) throw new Error(`Question ${n} has no answer.`);
@@ -130,6 +131,7 @@ function parseQuiz(text, { minQuestions = settings.questionCount } = {}) {
         expected: String(q.answer),
         explain: q.explain || "",
         reviewOf: q.reviewOf || "",
+        lessonId: q.lessonId || "",
       });
     }
   });
@@ -215,7 +217,7 @@ function renderQuestion() {
   const q = quiz.questions[idx];
   const total = quiz.questions.length;
   const label = { practice: "Practice (doesn't count) · ", review: "Review · ", vocab: "Vocab · " }[quizMode] || "";
-  $("q-progress").textContent = `${label}Pergunta ${idx + 1} de ${total}`;
+  $("q-progress").textContent = `${label}${q.lessonTitle ? `${q.lessonTitle} · ` : ""}Pergunta ${idx + 1} de ${total}`;
   $("q-bar").style.width = `${(idx / total) * 100}%`;
   $("q-text").textContent = q.q;
   $("feedback").hidden = true;
@@ -533,24 +535,32 @@ function offerAgain(label, start) {
 
 const startMoreVocab = () => startVocab(["vocab-more-btn", "vocab-more-status", "vocab-more-error"]);
 
-// The review quiz updates the review queue (items answered right move further out, misses come back
-// tomorrow, new misses on earlier-lesson questions join it), notes which lessons were checked, and
-// counts as done whatever the score.
+// The review quiz updates the review queue (items answered right move further out, misses join it and
+// come back tomorrow) and clears each lesson answered right. It's done once every earlier lesson is
+// cleared; until then each round asks only the lessons still left.
 async function finishReview() {
   const { total, right } = startResults();
   const today = todayKey();
   const message = `Review quiz ${today}: ${right}/${total}`;
   review = await mutate("review", (r) => applyReviews(r, results, null, `${today}-review-${quiz.hash}`), message);
-  const checked = Object.fromEntries((quiz.reviewLessons || []).map((slug) => [slug, today]));
-  progress = await mutate(
-    "progress",
-    (p) => ({ ...withTaskDone(p, "review"), lessonChecked: { ...(p.lessonChecked || {}), ...checked } }),
-    message
-  );
+  const cleared = [...results.filter((r) => r.correct && r.question.lessonSlug).map((r) => r.question.lessonSlug), ...(quiz.freeLessons || [])];
+  const all = reviewSlugs();
+  progress = await mutate("progress", (p) => withReviewRound(p, cleared, all), message);
   renderStreak();
   renderSyncStatus();
-  renderMisses("What you missed. These come back tomorrow:");
-  renderAfterTask("Review quiz done!");
+  const left = reviewLeft(progress, all);
+  if (!left.length) {
+    renderMisses("What you missed. These come back in tomorrow's review:");
+    renderAfterTask("Review quiz done! Every lesson cleared.");
+    return;
+  }
+  renderMisses("What you missed:");
+  const titles = left.map((slug) => syllabus.lessons.find((l) => lessonSlug(l) === slug)?.title || slug);
+  $("result-title").textContent =
+    `${plural(left.length, "lesson")} still to clear: ${titles.join(", ")}. The next round asks a new question on ${left.length === 1 ? "it" : "each of those"}.`;
+  offerAgain(`Next round (${plural(left.length, "question")})`, quiz.source === "offline" ? startOfflineReview : startReview);
+  $("practice-done").textContent = "Back to today's quizzes";
+  $("practice-done").hidden = false;
 }
 
 // The vocab quiz updates each word's schedule in vocab.json and counts as done whatever the score.
@@ -774,15 +784,43 @@ async function getLessonText(i) {
 }
 
 // Writes a quiz for one lesson and starts it. ids: the button, status, and error elements to update.
-// Lessons before the current one that can be reviewed, with whatever digests already exist (none are built here).
-// Lessons checked longest ago (or never) come first; ties are random.
-async function earlierWithDigests(beforeIndex, limit) {
-  const checked = progress.lessonChecked || {};
-  const picks = shuffleArray(earlierLessonIndexes(syllabus, beforeIndex))
-    .map((j) => syllabus.lessons[j])
-    .sort((a, b) => (checked[lessonSlug(a)] || "").localeCompare(checked[lessonSlug(b)] || ""))
-    .slice(0, limit);
-  return Promise.all(picks.map(async (l) => ({ lesson: l, digest: await readRepoFile(digestPath(l)).catch(() => null) })));
+// Every lesson the review quiz covers: the completed ones (before the current lesson, not skipped).
+const reviewSlugs = () => (syllabus ? earlierLessonIndexes(syllabus, currentLesson).map((j) => lessonSlug(syllabus.lessons[j])) : []);
+
+// This round's lessons: the ones not yet cleared today, in book order, with their digests (none are built
+// here) and the most overdue review-queue item from that lesson, if any.
+async function reviewItems() {
+  const left = new Set(reviewLeft(progress, reviewSlugs()));
+  const due = dueMistakes(review, Infinity);
+  const indexes = earlierLessonIndexes(syllabus, currentLesson).filter((j) => left.has(lessonSlug(syllabus.lessons[j])));
+  return Promise.all(indexes.map(async (j) => {
+    const l = syllabus.lessons[j];
+    return {
+      id: lessonSlug(l),
+      index: j,
+      lesson: l,
+      digest: await readRepoFile(digestPath(l)).catch(() => null),
+      mistake: due.find((m) => m.lesson === j) || null,
+    };
+  }));
+}
+
+// Ties each review question to its lesson (for the label and for clearing it) and puts them in book order.
+// Gemini can skip or double up a lesson: extras are dropped, and a missing lesson gets one of its digest's
+// exercises instead, if it has any.
+function matchReviewQuestions(questions, items) {
+  const out = [];
+  for (const it of items) {
+    let q = questions.find((x) => x.lessonId === it.id && !out.includes(x));
+    if (!q) {
+      const x = shuffleArray((it.digest?.exercises || []).filter((e) => e.prompt && e.answer))[0];
+      if (!x) continue;
+      q = { type: "text", q: x.prompt, answers: [String(x.answer)], expected: String(x.answer), explain: "", reviewOf: "earlier" };
+    }
+    if (q.reviewOf && q.reviewOf !== "earlier" && q.reviewOf !== it.mistake?.id) q.reviewOf = "earlier";
+    out.push(Object.assign(q, { lessonSlug: it.id, lessonIndex: it.index, lessonTitle: it.lesson.title }));
+  }
+  return out;
 }
 
 // Vocabulary from lessons already done (before the current one, not skipped), taken from their digests.
@@ -844,21 +882,18 @@ async function generateWithGemini({ mode = "daily", lessonIndex = currentLesson,
   try {
     if (!syllabus) throw new Error("The lessons haven't loaded yet.");
     const common = { apiKey: settings.geminiApiKey, model: settings.geminiModel, syllabus, skipPronunciation: settings.skipPronunciation };
-    let text, digest, minQuestions;
-    const extra = {};
+    let text, digest, minQuestions, items, schema;
 
     if (mode === "review") {
-      status.textContent = "Gathering your review items…";
-      const due = dueMistakes(review, settings.questionCount);
-      const earlier = await earlierWithDigests(currentLesson, 3);
-      if (!due.length && !earlier.length) throw new Error("Nothing to review yet.");
+      status.textContent = "Gathering the lessons to review…";
+      items = await reviewItems();
+      if (!items.length) throw new Error("Nothing to review yet.");
       // The checker compares hints against vocabulary, so give it the reviewed lessons' combined list.
-      digest = { vocabulary: earlier.flatMap((e) => e.digest?.vocabulary || []) };
-      status.textContent = "Writing a review quiz…";
-      const result = await generateReviewQuiz({ ...common, due, earlier, progress, n: settings.questionCount });
-      text = result.text;
-      minQuestions = result.count;
-      extra.reviewLessons = earlier.map((e) => lessonSlug(e.lesson));
+      digest = { vocabulary: items.flatMap((it) => it.digest?.vocabulary || []) };
+      status.textContent = `Writing a review quiz (${plural(items.length, "lesson")})…`;
+      text = await generateReviewQuiz({ ...common, items, progress });
+      minQuestions = items.length;
+      schema = reviewSchema(items.map((it) => it.id));
     } else {
       status.textContent = "Getting the lesson…";
       digest = await ensureDigest(lessonIndex);
@@ -878,7 +913,7 @@ async function generateWithGemini({ mode = "daily", lessonIndex = currentLesson,
     // Second pass: catch duplicate answers, wrong keys, and incomplete hints. Keep the original if it fails.
     status.textContent = "Double-checking the questions…";
     try {
-      const reviewed = await reviewQuiz({ ...common, digest, quizText: text });
+      const reviewed = await reviewQuiz({ ...common, digest, quizText: text, schema });
       parseQuiz(reviewed, { minQuestions });
       text = reviewed;
     } catch {}
@@ -887,12 +922,13 @@ async function generateWithGemini({ mode = "daily", lessonIndex = currentLesson,
     if (problems.length) {
       status.textContent = `Rewriting ${plural(problems.length, "question")} that gave away the answer…`;
       try {
-        const fixed = await reviewQuiz({ ...common, digest, quizText: text, problems });
+        const fixed = await reviewQuiz({ ...common, digest, quizText: text, problems, schema });
         parseQuiz(fixed, { minQuestions });
         text = fixed;
       } catch {}
     }
-    const msg = await beginQuiz(text, "gemini", { mode, lessonIndex: mode === "review" ? null : lessonIndex, minQuestions, extra });
+    if (mode === "review") return startReviewQuiz(parseQuiz(text, { minQuestions: 1 }), items, "gemini");
+    const msg = await beginQuiz(text, "gemini", { mode, lessonIndex, minQuestions });
     if (msg) throw new Error(`Gemini's quiz didn't work: ${msg} Try generating again.`);
   } catch (e) {
     err.textContent = e.message;
@@ -1252,9 +1288,17 @@ function startReview() {
   generateWithGemini({ mode: "review", ids: ["review-btn", "review-status", "review-error"] });
 }
 
-// Fallback for when Gemini is down: builds the review quiz locally. Due review items are asked again as
-// written, then the rest is filled with exercises from earlier lessons' digests. Answers not in the key are
-// self-graded (see answerText), since there's no Gemini to judge them.
+// Starts a review round from parsed questions, one per lesson in items.
+function startReviewQuiz(parsed, items, source) {
+  const questions = matchReviewQuestions(parsed.questions, items);
+  if (!questions.length) throw new Error("The review quiz came back empty. Try again.");
+  const hash = hashString(JSON.stringify(questions.map((q) => q.q)));
+  startPreparedQuiz({ lesson: "Review", hash, questions, source }, { mode: "review", lessonIndex: null });
+}
+
+// Fallback for when Gemini is down: builds the review round locally, one question per lesson still to clear.
+// A lesson's due review item is asked again as written; otherwise it's one of its digest's exercises.
+// Answers not in the key are self-graded (see answerText), since there's no Gemini to judge them.
 async function startOfflineReview() {
   const [btn, status, err] = ["review-offline-btn", "review-status", "review-error"].map($);
   err.hidden = true;
@@ -1262,41 +1306,22 @@ async function startOfflineReview() {
   status.textContent = "Building a review quiz without Gemini…";
   try {
     if (!syllabus) throw new Error("The lessons haven't loaded yet.");
-    const n = settings.questionCount;
-    const questions = dueMistakes(review, n).map((m) => ({
+    const items = await reviewItems();
+    if (!items.length) throw new Error("Nothing to review yet.");
+    const questions = items.filter((it) => it.mistake).map((it) => ({
       type: "text",
-      q: m.q,
-      answers: [String(m.expected)],
-      expected: String(m.expected),
-      explain: m.explain || "",
-      reviewOf: m.id,
+      q: it.mistake.q,
+      answers: [String(it.mistake.expected)],
+      expected: String(it.mistake.expected),
+      explain: it.mistake.explain || "",
+      reviewOf: it.mistake.id,
+      lessonId: it.id,
     }));
-    // Take exercises round-robin across the earlier lessons checked longest ago.
-    const earlier = (await earlierWithDigests(currentLesson, 3))
-      .map((e) => ({ lesson: e.lesson, exercises: shuffleArray((e.digest?.exercises || []).filter((x) => x.prompt && x.answer)) }))
-      .filter((e) => e.exercises.length);
-    const used = new Set();
-    while (questions.length < n && earlier.some((e) => e.exercises.length)) {
-      for (const e of earlier) {
-        const x = e.exercises.shift();
-        if (!x || questions.length >= n) continue;
-        used.add(lessonSlug(e.lesson));
-        questions.push({
-          type: "text",
-          q: x.prompt,
-          answers: [String(x.answer)],
-          expected: String(x.answer),
-          explain: `From ${e.lesson.title}.`,
-          reviewOf: "earlier",
-        });
-      }
-    }
-    if (!questions.length) throw new Error("Nothing to review yet.");
-    const hash = hashString(JSON.stringify(questions.map((q) => q.q)));
-    startPreparedQuiz(
-      { lesson: "Review", hash, questions: shuffleArray(questions), source: "offline" },
-      { mode: "review", lessonIndex: null, extra: { reviewLessons: [...used] } },
-    );
+    // Lessons without a due item get one of their exercises (matchReviewQuestions fills those in).
+    startReviewQuiz({ questions }, items, "offline");
+    // A lesson with neither has nothing to ask offline; it counts as cleared so it can't block the day.
+    const asked = new Set(quiz.questions.map((q) => q.lessonSlug));
+    quiz.freeLessons = items.map((it) => it.id).filter((id) => !asked.has(id));
   } catch (e) {
     err.textContent = e.message;
     err.hidden = false;
@@ -1327,18 +1352,18 @@ async function renderTasks() {
     : hasGemini ? `You need ${settings.passPercent}% to pass.` : "Use \"Paste a quiz from any chatbot\" below to take it.";
 
   const reviewDone = taskDone(progress, "review");
-  const due = dueMistakes(review, Infinity).length;
-  const total = review.mistakes?.length || 0;
-  const hasEarlier = !!syllabus && earlierLessonIndexes(syllabus, currentLesson).length > 0;
-  const canReview = hasGemini && (due > 0 || hasEarlier);
+  const allReview = reviewSlugs();
+  const reviewLeftNow = reviewLeft(progress, allReview);
+  const canReview = hasGemini && reviewLeftNow.length > 0;
   mark("review", reviewDone);
   $("review-btn").hidden = reviewDone || !canReview;
   $("review-offline-btn").hidden = reviewDone || !canReview;
+  $("review-btn").textContent = reviewLeftNow.length < allReview.length ? "Start the next round" : "Start the review quiz";
   $("review-summary").textContent = reviewDone
     ? "Done today."
-    : due
-      ? `${plural(due, "item")} you got wrong ${due === 1 ? "is" : "are"} due${total > due ? ` (${total - due} more later)` : ""}, then earlier lessons you haven't checked in a while.`
-      : "Nothing is due today, so it checks the earlier lessons you haven't seen in the longest.";
+    : reviewLeftNow.length < allReview.length
+      ? `${allReview.length - reviewLeftNow.length} of ${plural(allReview.length, "lesson")} cleared today. ${reviewLeftNow.length} left, with a new question on ${reviewLeftNow.length === 1 ? "it" : "each"}.`
+      : `One open question on each of your ${plural(allReview.length, "earlier lesson")}. Get each one right to clear it; missed lessons come back in another round.`;
 
   const vocabDone = taskDone(progress, "vocab");
   mark("vocab", vocabDone);
