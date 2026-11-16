@@ -560,8 +560,11 @@ function wire() {
     savePrefs();
   });
   const box = document.querySelector(".player");
-  $("fullscreen").hidden = !(box.requestFullscreen || box.webkitRequestFullscreen);
-  $("fullscreen").addEventListener("click", toggleFullscreen);
+  const canFullscreen = !!(box.requestFullscreen || box.webkitRequestFullscreen);
+  for (const id of ["fullscreen", "fs-video"]) {
+    $(id).hidden = !canFullscreen;
+    $(id).addEventListener("click", toggleFullscreen);
+  }
   for (const [id, key] of [["show-en", "showEn"], ["pause-each", "pauseEach"], ["follow", "follow"], ["on-video", "overlay"]]) {
     $(id).addEventListener("change", () => {
       prefs[key] = $(id).checked;
