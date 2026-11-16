@@ -805,7 +805,7 @@ async function reviewItems() {
   }));
 }
 
-// Ties each review question to its lesson (for the label and for clearing it) and puts them in book order.
+// Ties each review question to its lesson (for the label and for clearing it) (one per lesson).
 // Gemini can skip or double up a lesson: extras are dropped, and a missing lesson gets one of its digest's
 // exercises instead, if it has any.
 function matchReviewQuestions(questions, items) {
@@ -1290,7 +1290,7 @@ function startReview() {
 
 // Starts a review round from parsed questions, one per lesson in items.
 function startReviewQuiz(parsed, items, source) {
-  const questions = matchReviewQuestions(parsed.questions, items);
+  const questions = shuffleArray(matchReviewQuestions(parsed.questions, items));
   if (!questions.length) throw new Error("The review quiz came back empty. Try again.");
   const hash = hashString(JSON.stringify(questions.map((q) => q.q)));
   startPreparedQuiz({ lesson: "Review", hash, questions, source }, { mode: "review", lessonIndex: null });
