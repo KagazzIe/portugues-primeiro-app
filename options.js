@@ -7,7 +7,7 @@ const flash = (id, text, ms = 2500) => {
 
 async function render() {
   const s = await getSettings();
-  for (const k of ["githubRepo", "githubToken", "geminiApiKey", "geminiModel", "bookUrl", "questionCount", "passPercent", "advancePercent"]) {
+  for (const k of ["githubRepo", "githubToken", "geminiApiKey", "geminiModel", "videoModel", "bookUrl", "questionCount", "passPercent", "advancePercent"]) {
     if (document.activeElement !== $(k)) $(k).value = s[k];
   }
   $("allowlist").value = s.allowlist.join("\n");
@@ -166,6 +166,7 @@ $("save").addEventListener("click", async () => {
   const synced = clampSettings({
     ...(await getDoc("settings")),
     geminiModel: $("geminiModel").value.trim() || SYNCED_DEFAULTS.geminiModel,
+    videoModel: $("videoModel").value.trim() || SYNCED_DEFAULTS.videoModel,
     bookUrl,
     questionCount: parseInt($("questionCount").value, 10),
     passPercent: parseInt($("passPercent").value, 10),

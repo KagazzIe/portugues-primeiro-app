@@ -14,6 +14,7 @@ const DOCS = {
   review: { path: `${DATA_DIR}/review.json`, init: () => ({ mistakes: [] }) },
   vocab: { path: `${DATA_DIR}/vocab.json`, init: () => ({ words: {} }) },
   syllabus: { path: `${DATA_DIR}/syllabus.json`, init: () => null },
+  videos: { path: `${DATA_DIR}/videos/index.json`, init: () => ({ videos: [] }) },
 };
 
 const DATA_REPO_README = `# Português Primeiro data
@@ -30,6 +31,7 @@ The extension reads and writes these files; edit them by hand only if you know w
 | \`syllabus.json\` | Lesson list from the textbook; \`"skip": true\` marks lessons to step over |
 | \`digests/\` | One digest per textbook lesson: the complete summary daily lessons and quizzes are built from |
 | \`lessons/\` | Each day's generated lesson |
+| \`videos/\` | Videos to watch (\`index.json\`) and their captions (\`<youtube id>.json\`) |
 | \`results/\` | One file per quiz with every question, your answer, and whether it was right |
 
 See \`AGENTS.md\` at the repo root for how digests are written.

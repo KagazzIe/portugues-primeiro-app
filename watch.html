@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Watch · Português Primeiro</title>
+  <link rel="stylesheet" href="lock.css">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Português">
+  <link rel="icon" href="icon.svg">
+</head>
+<body class="watch-page">
+  <main>
+    <header>
+      <div class="header-top">
+        <h1>Assistir</h1>
+        <button id="back-home" class="link header-settings">← Today's lesson</button>
+      </div>
+      <p class="sub">YouTube videos in Portuguese, with captions written by Gemini.</p>
+      <p id="sync-status" class="hint" hidden></p>
+    </header>
+
+    <!-- The list of videos, and adding one -->
+    <section id="library-view" hidden>
+      <div class="card">
+        <h2>Add a video</h2>
+        <label for="video-url">YouTube link</label>
+        <input id="video-url" type="text" autocomplete="off" spellcheck="false" placeholder="https://www.youtube.com/watch?v=…">
+        <div class="row">
+          <button id="add-video" class="primary">Add and write captions</button>
+        </div>
+        <p id="add-status" class="hint"></p>
+        <p id="add-error" class="error" hidden></p>
+        <p class="hint">Gemini watches the video and writes Portuguese captions with English under each line.
+          It takes a minute or two, longer for long videos. The video must be public and allow embedding.</p>
+      </div>
+
+      <div class="card">
+        <h2>Your videos</h2>
+        <p id="library-empty" class="hint" style="margin-top:0" hidden>No videos yet. Add one above.</p>
+        <ul id="library" class="video-list"></ul>
+      </div>
+    </section>
+
+    <!-- One video with its captions -->
+    <section id="watch-view" hidden>
+      <div class="row" style="margin:0 0 12px">
+        <button id="to-library" class="link" style="padding-left:0">← All videos</button>
+      </div>
+      <h2 id="video-title" class="video-title"></h2>
+      <p id="video-meta" class="hint" style="margin:0 0 12px"></p>
+
+      <div class="player"><iframe id="player" title="YouTube video player" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>
+      <p id="player-error" class="error" hidden></p>
+
+      <div class="card now-card">
+        <p id="now-pt" class="now-pt"></p>
+        <p id="now-en" class="now-en"></p>
+        <div id="gloss" class="gloss" hidden></div>
+        <div class="row caption-controls">
+          <button id="prev-line" title="Previous line (←)">⏮</button>
+          <button id="replay-line" title="Replay this line (R)">⟲ Replay line</button>
+          <button id="next-line" title="Next line (→)">⏭</button>
+          <button id="speed" title="Playback speed">Speed 1×</button>
+        </div>
+        <div class="row caption-toggles">
+          <label class="check"><input id="show-en" type="checkbox" checked> English (E)</label>
+          <label class="check"><input id="pause-each" type="checkbox"> Pause after each line</label>
+          <label class="check"><input id="follow" type="checkbox" checked> Follow along</label>
+        </div>
+        <p class="hint">Tap a word above to see what it means. Tap a line below to jump to it.</p>
+      </div>
+
+      <div class="card transcript-card">
+        <ol id="transcript" class="transcript"></ol>
+      </div>
+
+      <div class="row">
+        <button id="redo-captions" class="link" style="padding-left:0">Rewrite the captions</button>
+        <a id="open-youtube" target="_blank" rel="noopener">Open on YouTube ↗</a>
+      </div>
+      <p id="redo-status" class="hint"></p>
+      <p id="redo-error" class="error" hidden></p>
+    </section>
+
+    <p id="page-loading" class="hint">Loading…</p>
+  </main>
+  <script src="web-shim.js"></script>
+  <script src="shared.js"></script>
+  <script src="github.js"></script>
+  <script src="store.js"></script>
+  <script src="gemini.js"></script>
+  <script src="watch.js"></script>
+</body>
+</html>

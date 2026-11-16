@@ -155,3 +155,41 @@ select {
 .emergency summary { cursor: pointer; }
 .phrase { font-style: italic; color: var(--text); }
 .emergency input { margin-bottom: 8px; }
+
+/* Watch page */
+.header-links { display: flex; gap: 4px 12px; flex-wrap: wrap; }
+.watch-page main { max-width: 860px; }
+.video-list { list-style: none; padding: 0; margin: 0; }
+.video-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.video-list li:first-child { border-top: none; padding-top: 0; }
+.video-list .video-link { font-weight: 600; flex: 1 1 100%; }
+.video-list .hint { margin: 0; }
+.video-list button.link { padding: 0 4px; font-size: .9rem; }
+.video-title { font-size: 1.3rem; margin-bottom: 4px; }
+.player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+.player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.now-card { position: sticky; top: 0; z-index: 1; }
+.now-pt { font-size: 1.35rem; font-weight: 600; margin: 0; line-height: 1.45; min-height: 1.45em; }
+.now-en { color: var(--muted); margin: 4px 0 0; min-height: 1.5em; }
+.hide-en .now-en, .hide-en .transcript .en { visibility: hidden; }
+.hide-en .transcript .en { display: none; }
+button.word { font: inherit; padding: 0 1px; border: none; background: none; color: inherit; border-radius: 4px; cursor: pointer; }
+button.word:hover { background: var(--green-soft); color: var(--green); }
+.gloss { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--green-soft); }
+.caption-controls button { padding: 7px 12px; }
+.caption-toggles { gap: 4px 18px; margin-top: 8px; }
+.caption-toggles label.check { margin: 0; font-weight: 400; }
+.transcript-card { padding: 8px; }
+.transcript { list-style: none; margin: 0; padding: 0; max-height: 45vh; overflow-y: auto; }
+.transcript li { display: grid; grid-template-columns: 3.5em 1fr; gap: 0 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.transcript li:hover { background: var(--bg); }
+.transcript li.active { background: var(--green-soft); }
+.transcript .t { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.transcript .pt { grid-column: 2; }
+.transcript .en { grid-column: 2; color: var(--muted); font-size: .9rem; }
+@media (max-width: 600px) {
+  .now-card { position: static; }
+  .now-card > .hint { display: none; }
+  .caption-controls button { padding: 6px 10px; }
+  .now-pt { font-size: 1.2rem; }
+}

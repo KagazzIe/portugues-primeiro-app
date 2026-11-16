@@ -9,6 +9,7 @@ const SYNCED_DEFAULTS = {
   skipPronunciation: false,
   sounds: true,
   geminiModel: "gemini-3.5-flash-lite",
+  videoModel: "gemini-3.5-flash", // writes video captions: needs to be stronger than the daily model
   allowlist: [
     "wisc.pb.unizin.org",
     "gemini.google.com",

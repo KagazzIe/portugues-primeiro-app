@@ -24,14 +24,14 @@ async function geminiFetch(url, init) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function generateJson({ apiKey, model, parts, schema, temperature }) {
+async function generateJson({ apiKey, model, parts, schema, temperature, config = {} }) {
   const request = () =>
     geminiFetch(`${GEMINI_BASE}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
-        generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature },
+        generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature, ...config },
       }),
     });
   // The free tier rate-limits per minute (429) and the service is sometimes overloaded (503).
@@ -47,6 +47,7 @@ async function generateJson({ apiKey, model, parts, schema, temperature }) {
   }
   const data = await res.json();
   const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
+  if (data.candidates?.[0]?.finishReason === "MAX_TOKENS") throw new GeminiError("Gemini's reply was cut off (too long).");
   if (!text) throw new GeminiError(`Gemini returned no text (${data.candidates?.[0]?.finishReason || "unknown reason"}).`);
   return text;
 }
@@ -552,4 +553,92 @@ Ignore accents, capitalization, and punctuation: missing or wrong accents never 
   });
   const r = JSON.parse(text);
   return { correct: !!r.correct, feedback: String(r.feedback || "") };
+}
+
+// ---------- Video captions ----------
+// Gemini watches a public YouTube video from its URL (nothing is downloaded) and writes timed
+// Portuguese captions with an English line for each.
+
+// "1:02:03.5", "02:03", "2:03.4" or plain seconds -> seconds.
+function parseTimestamp(t) {
+  if (typeof t === "number") return t;
+  const parts = String(t).trim().split(":").map(Number);
+  if (!parts.length || parts.some((n) => !Number.isFinite(n))) return NaN;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+async function generateCaptions({ apiKey, model, videoId }) {
+  const text = await generateJson({
+    apiKey,
+    model,
+    temperature: 0,
+    config: { mediaResolution: "MEDIA_RESOLUTION_LOW", maxOutputTokens: 65536 },
+    schema: {
+      type: "OBJECT",
+      properties: {
+        lines: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: { start: { type: "STRING" }, end: { type: "STRING" }, pt: { type: "STRING" }, en: { type: "STRING" } },
+            required: ["start", "end", "pt", "en"],
+          },
+        },
+      },
+      required: ["lines"],
+    },
+    parts: [
+      { fileData: { fileUri: `https://www.youtube.com/watch?v=${videoId}` } },
+      {
+        text: `Write captions for this Portuguese video, for an English-speaking beginner learning Brazilian Portuguese.
+
+- Transcribe everything that is said, from the start of the video to the end, word for word. Don't summarize, skip, or tidy up the speech; keep fillers like "né", "tipo", "então".
+- Split it into caption lines of one short sentence or clause each: at most about 12 words and 6 seconds per line.
+- "start" and "end" are when the line is spoken, as MM:SS.s timestamps from the start of the video (e.g. "01:07.5"). Be as exact as you can: captions are shown in sync with the video.
+- "pt" uses correct Portuguese spelling with accents (post-2009 spelling).
+- "en" is a natural English translation of that line.
+- Leave out music, sound effects, and on-screen text that isn't spoken. Lines must be in time order and must not overlap.`,
+      },
+    ],
+  });
+  const lines = JSON.parse(text)
+    .lines.map((l) => ({ start: parseTimestamp(l.start), end: parseTimestamp(l.end), pt: String(l.pt).trim(), en: String(l.en).trim() }))
+    .filter((l) => Number.isFinite(l.start) && l.pt)
+    .sort((a, b) => a.start - b.start);
+  // Repair missing or impossible end times: a line ends by the time the next one starts.
+  lines.forEach((l, i) => {
+    const next = lines[i + 1]?.start ?? Infinity;
+    if (!Number.isFinite(l.end) || l.end <= l.start) l.end = Math.min(l.start + 4, next);
+    l.end = Math.min(l.end, next);
+    l.start = Math.round(l.start * 10) / 10;
+    l.end = Math.round(l.end * 10) / 10;
+  });
+  if (!lines.length) throw new GeminiError("Gemini didn't find any Portuguese speech in that video.");
+  return lines;
+}
+
+// What a word means in the caption line it appears in.
+async function explainWord({ apiKey, model, word, line }) {
+  const text = await generateJson({
+    apiKey,
+    model,
+    temperature: 0,
+    schema: {
+      type: "OBJECT",
+      properties: { base: { type: "STRING" }, meaning: { type: "STRING" }, note: { type: "STRING" } },
+      required: ["base", "meaning", "note"],
+    },
+    parts: [{
+      text: `A beginner learning Brazilian Portuguese tapped a word in a video caption.
+
+Word: ${word}
+Caption line: ${line}
+
+"base": the dictionary form (infinitive for verbs, masculine singular with its article for nouns, e.g. "o carro"), or the word itself if it is already that.
+"meaning": its English meaning in this line, a few words.
+"note": one short sentence in English on the form used here (e.g. "1st person singular present of ir") or an expression it's part of; "" if there's nothing useful to add.`,
+    }],
+  });
+  const r = JSON.parse(text);
+  return { base: String(r.base || word), meaning: String(r.meaning || ""), note: String(r.note || "") };
 }
