@@ -169,6 +169,21 @@ async function addVideo() {
 // ---------- Embedded player ----------
 // Talks to the YouTube iframe through postMessage (the same protocol as YouTube's iframe API, without
 // loading its script, which extension pages can't do).
+// YouTube refuses to play embeds on pages that aren't on a website (error 153), which includes extension
+// pages. So in Firefox the player goes through a relay page on the phone site (web/player.html), which embeds
+// YouTube and passes messages both ways. The phone version embeds YouTube directly.
+// "?relay" in the page address forces the relay from the same site, for testing the phone build.
+const RELAY_URL = "https://kagazzie.github.io/portugues-primeiro-app/player.html";
+function playerSource(videoId) {
+  const useRelay = new URLSearchParams(location.search).has("relay");
+  if (window.IS_WEB_APP && !useRelay) {
+    const params = new URLSearchParams({ enablejsapi: "1", playsinline: "1", rel: "0", iv_load_policy: "3", cc_load_policy: "0", hl: "pt-BR", origin: location.origin });
+    return { src: `https://www.youtube.com/embed/${videoId}?${params}`, origins: ["https://www.youtube.com", "https://www.youtube-nocookie.com"] };
+  }
+  const relay = new URL(useRelay ? "player.html" : RELAY_URL, location.href);
+  relay.searchParams.set("v", videoId);
+  return { src: relay.href, origins: [relay.origin] };
+}
 
 class YouTubePlayer {
   constructor(iframe, videoId, { onInfo, onError }) {
@@ -181,9 +196,9 @@ class YouTubePlayer {
     this.rate = 1;
     this.connected = false;
 
-    const params = new URLSearchParams({ enablejsapi: "1", playsinline: "1", rel: "0", iv_load_policy: "3", cc_load_policy: "0", hl: "pt-BR" });
-    if (/^https?:$/.test(location.protocol)) params.set("origin", location.origin);
-    iframe.src = `https://www.youtube.com/embed/${videoId}?${params}`;
+    const source = playerSource(videoId);
+    this.origins = source.origins;
+    iframe.src = source.src;
 
     window.addEventListener("message", (e) => this.receive(e));
     // Keep saying hello until the player answers.
@@ -206,7 +221,7 @@ class YouTubePlayer {
   }
 
   receive(e) {
-    if (e.source !== this.iframe.contentWindow || !/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+    if (e.source !== this.iframe.contentWindow || !this.origins.includes(e.origin)) return;
     let d;
     try {
       d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;

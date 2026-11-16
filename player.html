@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Player</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    iframe { display: block; width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <!--
+    Relay for the extension's Watch page. YouTube won't play embeds on pages that aren't on a website
+    (error 153), and extension pages aren't. So the extension embeds this page from the phone site, and this
+    page embeds YouTube and passes the player's postMessage traffic between the two.
+    Usage: player.html?v=<11-character video id>
+  -->
+  <iframe id="yt" title="YouTube video player" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+  <script>
+    const id = new URLSearchParams(location.search).get("v") || "";
+    const yt = document.getElementById("yt");
+    if (/^[\w-]{11}$/.test(id)) {
+      const params = new URLSearchParams({
+        enablejsapi: "1", playsinline: "1", rel: "0", iv_load_policy: "3", cc_load_policy: "0", hl: "pt-BR",
+        origin: location.origin,
+      });
+      yt.src = `https://www.youtube.com/embed/${id}?${params}`;
+    }
+    window.addEventListener("message", (e) => {
+      if (e.source === window.parent && e.source !== window) yt.contentWindow?.postMessage(e.data, "https://www.youtube.com");
+      else if (e.source === yt.contentWindow) window.parent.postMessage(e.data, "*");
+    });
+  </script>
+</body>
+</html>
