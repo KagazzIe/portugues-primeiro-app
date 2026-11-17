@@ -599,7 +599,11 @@ function parseTimestamp(t) {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
-async function generateCaptions({ apiKey, model, videoId }) {
+// Background about the show a video is from (names, how characters talk), from data/videos/context.json.
+const showNotesBlock = (showNotes) =>
+  showNotes ? `\n\nAbout the show this video is from. Use it to recognise and spell names and to follow its writing conventions:\n${showNotes}` : "";
+
+async function generateCaptions({ apiKey, model, videoId, showNotes = "" }) {
   const text = await generateJson({
     apiKey,
     model,
@@ -629,7 +633,7 @@ async function generateCaptions({ apiKey, model, videoId }) {
 - "start" and "end" are when the line is spoken, as MM:SS.s timestamps from the start of the video (e.g. "01:07.5"). Be as exact as you can: captions are shown in sync with the video.
 - "pt" uses correct Portuguese spelling with accents (post-2009 spelling).
 - "en" is a natural English translation of that line.
-- Leave out music, sound effects, and on-screen text that isn't spoken. Lines must be in time order and must not overlap.`,
+- Leave out music, sound effects, and on-screen text that isn't spoken. Lines must be in time order and must not overlap.${showNotesBlock(showNotes)}`,
       },
     ],
   });
@@ -650,7 +654,7 @@ async function generateCaptions({ apiKey, model, videoId }) {
 }
 
 // What a word means in the caption line it appears in.
-async function explainWord({ apiKey, model, word, line, en }) {
+async function explainWord({ apiKey, model, word, line, en, showNotes = "" }) {
   const text = await generateJson({
     apiKey,
     model,
@@ -679,7 +683,8 @@ Work out the word's meaning from the whole line, not from the word alone. Some f
 "baseMeaning": the dictionary meaning of "base" in English, its main senses separated by " / ". Verbs start with "to" (e.g. ficar: "to stay / to become / to remain").
 "meaning": what the word means in this line, a few words of English (e.g. "found out", "I stayed").
 "form": for a verb, its tense (or mood) and person, e.g. "preterite · eu (1st person singular)", "present · ele/ela/você (3rd person singular)", "infinitive", "past participle". For other words, the form if it isn't the dictionary form (e.g. "feminine plural"), else "".
-"note": one short sentence on an expression the word is part of (e.g. "ficar sabendo = to find out") or anything else a beginner needs here; don't repeat the form or the meanings. "" if there's nothing to add.`,
+"note": one short sentence on an expression the word is part of (e.g. "ficar sabendo = to find out") or anything else a beginner needs here; don't repeat the form or the meanings. "" if there's nothing to add.
+If the word is a character's way of speaking rather than standard Portuguese (see the show notes, if any), give the standard word as "base" and say so in "note".${showNotesBlock(showNotes)}`,
     }],
   });
   const r = JSON.parse(text);

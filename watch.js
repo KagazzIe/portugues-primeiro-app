@@ -7,6 +7,19 @@ let settings;
 let videos; // synced doc: { videos: [{ id, title, channel, duration, lines, addedAt }] }
 
 const videoPath = (id) => `${DATA_DIR}/videos/${id}.json`;
+const SHOWS_PATH = `${DATA_DIR}/videos/context.json`;
+
+// Notes about the shows whose "match" strings appear in the video's title or channel (case and accents ignored).
+const fold = (s) => String(s || "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+async function showNotesFor(...texts) {
+  const ctx = await readRepoFile(SHOWS_PATH).catch(() => null);
+  const hay = fold(texts.join(" "));
+  const shows = (ctx?.shows || []).filter((s) => (s.match || []).some((m) => m && hay.includes(fold(m))));
+  return {
+    names: shows.map((s) => s.name),
+    text: shows.map((s) => `${s.name}:\n${[].concat(s.notes || []).map((n) => `- ${n}`).join("\n")}`).join("\n\n"),
+  };
+}
 const homeUrl = () => (window.IS_WEB_APP ? "index.html" : "lock.html");
 
 function fmtTime(sec) {
@@ -117,7 +130,8 @@ function renderLibrary() {
 // Asks Gemini for captions and saves them. Returns the caption file.
 async function writeCaptions(id, info) {
   const model = settings.videoModel || SYNCED_DEFAULTS.videoModel;
-  const lines = await generateCaptions({ apiKey: settings.geminiApiKey, model, videoId: id });
+  const shows = await showNotesFor(info?.title, info?.channel);
+  const lines = await generateCaptions({ apiKey: settings.geminiApiKey, model, videoId: id, showNotes: shows.text });
   const file = {
     format: 1,
     id,
@@ -126,6 +140,7 @@ async function writeCaptions(id, info) {
     channel: info?.channel || "",
     generatedBy: model,
     generatedAt: dateKey(new Date()),
+    shows: shows.names, // which show notes went into the prompt
     lines,
   };
   await writeRepoFile(videoPath(id), file, `Captions for ${file.title || id}`);
@@ -291,6 +306,7 @@ let player = null;
 let active = -1;       // index of the line being shown
 let pausedAfter = -1;  // the line "Pause after each line" last stopped at
 const glossCache = new Map();
+let showNotes = ""; // for word lookups in the open video
 
 async function savePrefs() {
   await browser.storage.local.set({ [PREF_KEY]: prefs });
@@ -395,7 +411,7 @@ async function lookUp(word, { pt: line, en }) {
   span.textContent = " · looking it up…";
   box.append(span);
   try {
-    if (!glossCache.has(key)) glossCache.set(key, explainWord({ apiKey: settings.geminiApiKey, model: settings.geminiModel, word, line, en }));
+    if (!glossCache.has(key)) glossCache.set(key, explainWord({ apiKey: settings.geminiApiKey, model: settings.geminiModel, word, line, en, showNotes }));
     const g = await glossCache.get(key);
     if (head.isConnected) {
       // fiquei · ficar: to stay / to become
@@ -497,6 +513,7 @@ async function openVideo(id) {
   meta();
   renderTranscript();
   renderNow();
+  showNotesFor(entry?.title, entry?.channel, captions.title, captions.channel).then((s) => (showNotes = s.text));
 
   let saving = false;
   player = new YouTubePlayer($("player"), id, {
