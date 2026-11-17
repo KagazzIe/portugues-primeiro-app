@@ -1147,11 +1147,6 @@ async function copy(text, btn) {
 
 async function useEmergency() {
   const msg = $("em-msg");
-  const { emergencyDate } = await browser.storage.local.get("emergencyDate");
-  if (emergencyDate === todayKey()) {
-    msg.textContent = "You've already used today's emergency pass.";
-    return;
-  }
   if ($("em-input").value.trim() !== EMERGENCY_PHRASE) {
     msg.textContent = "That doesn't match. Type the phrase exactly, accents included.";
     return;
