@@ -230,3 +230,9 @@ body:not(.captions-on-video) .overlay { display: none; }
 .fs-video[hidden] { display: none; }
 .fs-video .fs-exit, .player:fullscreen .fs-video .fs-enter { display: none; }
 .player:fullscreen .fs-video .fs-exit { display: block; }
+
+.gloss-line { font-size: .9rem; margin-top: 2px; color: var(--muted); }
+.gloss-here { color: inherit; }
+.gloss-label { font-weight: 600; }
+.overlay .gloss-line { color: #ccc; }
+.overlay .gloss-here { color: #fff; }

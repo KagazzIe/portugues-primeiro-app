@@ -398,13 +398,27 @@ async function lookUp(word, { pt: line, en }) {
     if (!glossCache.has(key)) glossCache.set(key, explainWord({ apiKey: settings.geminiApiKey, model: settings.geminiModel, word, line, en }));
     const g = await glossCache.get(key);
     if (head.isConnected) {
-      span.textContent = ` · ${g.base !== word ? `${g.base}: ` : ""}${g.meaning}`;
-      if (g.note) {
-        const note = document.createElement("div");
-        note.className = "hint";
-        note.style.margin = "2px 0 0";
-        note.textContent = g.note;
-        box.append(note);
+      // fiquei · ficar: to stay / to become
+      //   Here: found out
+      //   preterite · eu (1st person singular)
+      //   ficar sabendo = to find out
+      const same = g.base.toLowerCase() === word.toLowerCase();
+      span.textContent = ` · ${same ? "" : `${g.base}: `}${g.baseMeaning || g.meaning}`;
+      const lines = [];
+      if (g.meaning && g.meaning.toLowerCase() !== g.baseMeaning.toLowerCase()) lines.push(["Here: ", g.meaning]);
+      if (g.form) lines.push(["", g.form]);
+      if (g.note) lines.push(["", g.note]);
+      for (const [label, text] of lines) {
+        const div = document.createElement("div");
+        div.className = label ? "gloss-line gloss-here" : "gloss-line";
+        if (label) {
+          const b = document.createElement("span");
+          b.className = "gloss-label";
+          b.textContent = label;
+          div.append(b);
+        }
+        div.append(text);
+        box.append(div);
       }
     }
   } catch (e) {

@@ -657,8 +657,14 @@ async function explainWord({ apiKey, model, word, line, en }) {
     temperature: 0,
     schema: {
       type: "OBJECT",
-      properties: { base: { type: "STRING" }, meaning: { type: "STRING" }, note: { type: "STRING" } },
-      required: ["base", "meaning", "note"],
+      properties: {
+        base: { type: "STRING" },
+        baseMeaning: { type: "STRING" },
+        meaning: { type: "STRING" },
+        form: { type: "STRING" },
+        note: { type: "STRING" },
+      },
+      required: ["base", "baseMeaning", "meaning", "form", "note"],
     },
     parts: [{
       text: `A beginner learning Brazilian Portuguese tapped a word in a video caption.
@@ -670,10 +676,13 @@ English translation of the line (may be loose): ${en}` : ""}
 Work out the word's meaning from the whole line, not from the word alone. Some forms belong to more than one word, e.g. the preterite of ser and ir are the same (fui, foi, fomos, foram): "Não fui eu" is ser ("it wasn't me"), "Fui à praia" is ir ("I went"). Pick the one this line uses.
 
 "base": the dictionary form (infinitive for verbs, masculine singular with its article for nouns, e.g. "o carro"), or the word itself if it is already that.
-"meaning": its English meaning in this line, a few words.
-"note": one short sentence in English on the form used here (e.g. "1st person singular present of ir") or an expression it's part of; "" if there's nothing useful to add.`,
+"baseMeaning": the dictionary meaning of "base" in English, its main senses separated by " / ". Verbs start with "to" (e.g. ficar: "to stay / to become / to remain").
+"meaning": what the word means in this line, a few words of English (e.g. "found out", "I stayed").
+"form": for a verb, its tense (or mood) and person, e.g. "preterite · eu (1st person singular)", "present · ele/ela/você (3rd person singular)", "infinitive", "past participle". For other words, the form if it isn't the dictionary form (e.g. "feminine plural"), else "".
+"note": one short sentence on an expression the word is part of (e.g. "ficar sabendo = to find out") or anything else a beginner needs here; don't repeat the form or the meanings. "" if there's nothing to add.`,
     }],
   });
   const r = JSON.parse(text);
-  return { base: String(r.base || word), meaning: String(r.meaning || ""), note: String(r.note || "") };
+  const str = (v) => String(v || "").trim();
+  return { base: str(r.base) || word, baseMeaning: str(r.baseMeaning), meaning: str(r.meaning), form: str(r.form), note: str(r.note) };
 }
