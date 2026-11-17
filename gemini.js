@@ -650,7 +650,7 @@ async function generateCaptions({ apiKey, model, videoId }) {
 }
 
 // What a word means in the caption line it appears in.
-async function explainWord({ apiKey, model, word, line }) {
+async function explainWord({ apiKey, model, word, line, en }) {
   const text = await generateJson({
     apiKey,
     model,
@@ -664,7 +664,10 @@ async function explainWord({ apiKey, model, word, line }) {
       text: `A beginner learning Brazilian Portuguese tapped a word in a video caption.
 
 Word: ${word}
-Caption line: ${line}
+Caption line: ${line}${en ? `
+English translation of the line (may be loose): ${en}` : ""}
+
+Work out the word's meaning from the whole line, not from the word alone. Some forms belong to more than one word, e.g. the preterite of ser and ir are the same (fui, foi, fomos, foram): "Não fui eu" is ser ("it wasn't me"), "Fui à praia" is ir ("I went"). Pick the one this line uses.
 
 "base": the dictionary form (infinitive for verbs, masculine singular with its article for nouns, e.g. "o carro"), or the word itself if it is already that.
 "meaning": its English meaning in this line, a few words.

@@ -319,7 +319,7 @@ function renderWords(el, line) {
       const w = document.createElement("button");
       w.className = "word";
       w.textContent = part;
-      w.addEventListener("click", () => lookUp(part, line.pt));
+      w.addEventListener("click", () => lookUp(part, line));
       el.append(w);
     } else el.append(part);
   }
@@ -379,7 +379,7 @@ function goToLine(i, { play = true } = {}) {
   if (play) player.play();
 }
 
-async function lookUp(word, line) {
+async function lookUp(word, { pt: line, en }) {
   const box = $("gloss");
   box.hidden = false;
   box.textContent = "";
@@ -395,7 +395,7 @@ async function lookUp(word, line) {
   span.textContent = " · looking it up…";
   box.append(span);
   try {
-    if (!glossCache.has(key)) glossCache.set(key, explainWord({ apiKey: settings.geminiApiKey, model: settings.geminiModel, word, line }));
+    if (!glossCache.has(key)) glossCache.set(key, explainWord({ apiKey: settings.geminiApiKey, model: settings.geminiModel, word, line, en }));
     const g = await glossCache.get(key);
     if (head.isConnected) {
       span.textContent = ` · ${g.base !== word ? `${g.base}: ` : ""}${g.meaning}`;
