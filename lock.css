@@ -236,3 +236,15 @@ body:not(.captions-on-video) .overlay { display: none; }
 .gloss-label { font-weight: 600; }
 .overlay .gloss-line { color: #ccc; }
 .overlay .gloss-here { color: #fff; }
+
+/* Today's picks */
+.picks { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 12px; }
+.pick { display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: start; }
+.pick-thumb { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 16 / 9; background: var(--bg); }
+.pick-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.pick-duration { position: absolute; right: 6px; bottom: 6px; padding: 1px 6px; border-radius: 4px; background: rgba(0, 0, 0, .8); color: #fff; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.pick-body { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.pick-title { font-weight: 600; }
+@media (max-width: 520px) {
+  .pick { grid-template-columns: 1fr; }
+}

@@ -97,6 +97,7 @@ async function updateEntry(id, patch, message) {
 
 function renderLibrary() {
   $("page-loading").hidden = true;
+  renderPicks();
   $("library-view").hidden = false;
   $("watch-view").hidden = true;
   const list = $("library");
@@ -147,37 +148,127 @@ async function writeCaptions(id, info) {
   return file;
 }
 
-async function addVideo() {
-  showError("add-error", "");
-  const id = parseVideoId($("video-url").value);
-  if (!id) return showError("add-error", "That doesn't look like a YouTube link.");
+// Captions a video and adds it to the list, then opens it. `known` is what the catalog already knows (title,
+// duration); `ui` names the status and error elements and the buttons to disable meanwhile.
+async function addVideo(id, known = null, ui = { status: "add-status", error: "add-error", buttons: ["add-video"] }) {
+  showError(ui.error, "");
   if (videos.videos.some((v) => v.id === id)) {
     location.search = `?v=${encodeURIComponent(id)}`;
     return;
   }
-  if (!settings.geminiApiKey) return showError("add-error", "Add a Gemini API key in Settings first: Gemini writes the captions.");
+  if (!settings.geminiApiKey) return showError(ui.error, "Add a Gemini API key in Settings first: Gemini writes the captions.");
 
-  $("add-video").disabled = true;
+  const buttons = ui.buttons.map($).filter(Boolean);
+  buttons.forEach((b) => (b.disabled = true));
   try {
-    $("add-status").textContent = "Checking the video…";
-    const info = await fetchVideoInfo(id);
-    $("add-status").textContent = `Gemini is watching ${info?.title ? `"${info.title}"` : "the video"} and writing captions. This usually takes a minute or two…`;
+    $(ui.status).textContent = "Checking the video…";
+    const fetched = await fetchVideoInfo(id);
+    const info = { title: fetched?.title || known?.title || "", channel: fetched?.channel || "" };
+    $(ui.status).textContent = `Gemini is watching ${info.title ? `"${info.title}"` : "the video"} and writing captions. This usually takes a minute or two…`;
     const file = await writeCaptions(id, info);
     const entry = {
       id,
       title: file.title,
       channel: file.channel,
-      duration: null,
+      duration: known?.duration || null,
       lines: file.lines.length,
-      addedAt: dateKey(new Date()),
+      addedAt: todayKey(),
     };
     videos = await mutate("videos", (cur) => ({ ...(cur || {}), videos: [...(cur?.videos || []).filter((v) => v.id !== id), entry] }), `Add video: ${entry.title || id}`);
     location.search = `?v=${encodeURIComponent(id)}`;
   } catch (e) {
-    showError("add-error", `Couldn't add it: ${e.message}`);
-    $("add-status").textContent = "";
+    showError(ui.error, `Couldn't add it: ${e.message}`);
+    $(ui.status).textContent = "";
   } finally {
-    $("add-video").disabled = false;
+    buttons.forEach((b) => (b.disabled = false));
+  }
+}
+
+function addFromLink() {
+  const id = parseVideoId($("video-url").value);
+  if (!id) return showError("add-error", "That doesn't look like a YouTube link.");
+  addVideo(id);
+}
+
+// ---------- Daily picks ----------
+// Three videos a day from the playlists in data/videos/catalog.json (written by tools/fetch-playlist.mjs) that
+// haven't been added yet. The choice comes from the date, so every device shows the same three all day; a video
+// added today stays among them (marked as added) instead of being replaced.
+
+const CATALOG_PATH = `${DATA_DIR}/videos/catalog.json`;
+const PICKS_PER_DAY = 3;
+let catalog = null;
+
+function hash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h;
+}
+
+function dailyPicks() {
+  const today = todayKey();
+  const added = new Map(videos.videos.map((v) => [v.id, v]));
+  const seen = new Set();
+  const pool = [];
+  let notAdded = 0, total = 0;
+  for (const p of catalog?.playlists || []) {
+    for (const v of p.videos || []) {
+      if (seen.has(v.id)) continue;
+      seen.add(v.id);
+      total++;
+      const a = added.get(v.id);
+      if (!a) notAdded++;
+      if (!a || a.addedAt === today) pool.push({ ...v, added: !!a });
+    }
+  }
+  pool.sort((a, b) => hash(today + a.id) - hash(today + b.id));
+  return { picks: pool.slice(0, PICKS_PER_DAY), notAdded, total };
+}
+
+function renderPicks() {
+  const card = $("picks-card");
+  const { picks, notAdded, total } = dailyPicks();
+  card.hidden = !total;
+  if (!total) return;
+  const list = $("picks");
+  list.textContent = "";
+  const names = (catalog.playlists || []).map((p) => p.title).join(", ");
+  $("picks-summary").textContent = notAdded
+    ? `From ${names}: ${notAdded} of ${total} videos not added yet. New picks every day.`
+    : `You've added every video in ${names}.`;
+  for (const v of picks) {
+    const li = document.createElement("li");
+    li.className = "pick";
+    const thumb = document.createElement("img");
+    thumb.src = `https://i.ytimg.com/vi/${encodeURIComponent(v.id)}/mqdefault.jpg`;
+    thumb.alt = "";
+    thumb.loading = "lazy";
+    const dur = document.createElement("span");
+    dur.className = "pick-duration";
+    dur.textContent = fmtTime(v.duration);
+    const pic = document.createElement("div");
+    pic.className = "pick-thumb";
+    pic.append(thumb, dur);
+    const title = document.createElement("div");
+    title.className = "pick-title";
+    title.textContent = v.title.replace(/\s*\|\s*Turma da Mônica\s*$/i, "");
+    const btn = document.createElement("button");
+    btn.id = `pick-${v.id}`;
+    btn.className = v.added ? "" : "primary";
+    btn.textContent = v.added ? "Added ✓ Watch →" : "Add this one";
+    btn.addEventListener("click", () =>
+      v.added
+        ? (location.search = `?v=${encodeURIComponent(v.id)}`)
+        : addVideo(v.id, v, { status: "picks-status", error: "picks-error", buttons: picks.map((p) => `pick-${p.id}`) })
+    );
+    const body = document.createElement("div");
+    body.className = "pick-body";
+    body.append(title, btn);
+    li.append(pic, body);
+    list.append(li);
   }
 }
 
@@ -577,8 +668,8 @@ async function redoCaptions() {
 function wire() {
   $("back-home").addEventListener("click", () => (location.href = homeUrl()));
   $("to-library").addEventListener("click", () => (location.search = ""));
-  $("add-video").addEventListener("click", addVideo);
-  $("video-url").addEventListener("keydown", (e) => e.key === "Enter" && addVideo());
+  $("add-video").addEventListener("click", addFromLink);
+  $("video-url").addEventListener("keydown", (e) => e.key === "Enter" && addFromLink());
   $("redo-captions").addEventListener("click", redoCaptions);
 
   $("replay-line").addEventListener("click", () => goToLine(Math.max(0, active)));
@@ -633,7 +724,10 @@ async function init() {
   renderSyncStatus();
   const id = new URLSearchParams(location.search).get("v");
   if (id) await openVideo(id);
-  else renderLibrary();
+  else {
+    catalog = await readRepoFile(CATALOG_PATH).catch(() => null);
+    renderLibrary();
+  }
 }
 
 init();

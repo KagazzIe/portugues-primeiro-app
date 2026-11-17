@@ -23,6 +23,14 @@
 
     <!-- The list of videos, and adding one -->
     <section id="library-view" hidden>
+      <div class="card" id="picks-card" hidden>
+        <h2>Today's picks</h2>
+        <p id="picks-summary" class="hint" style="margin-top:0"></p>
+        <ul id="picks" class="picks"></ul>
+        <p id="picks-status" class="hint"></p>
+        <p id="picks-error" class="error" hidden></p>
+      </div>
+
       <div class="card">
         <h2>Add a video</h2>
         <label for="video-url">YouTube link</label>
