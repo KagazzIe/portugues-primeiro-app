@@ -653,7 +653,7 @@ async function generateCaptions({ apiKey, model, videoId, showNotes = "" }) {
 - "start" and "end" are when the line is spoken, as MM:SS.s timestamps from the start of the video (e.g. "01:07.5"). Be as exact as you can: captions are shown in sync with the video.
 - "pt" uses correct Portuguese spelling with accents (post-2009 spelling).
 - Write every word in its standard dictionary spelling, even when it isn't pronounced that way: a character's speech quirk (a lisp, swapping R for L, baby talk), a regional or rural accent, or a mispronunciation. Write the word they mean ("gorducha", not "golducha"; "acho", not "asho"; "você", not "ocê"), never a spelling made up to imitate the sound. Common informal forms that Brazilians also write are fine ("pra", "tá", "tô", "né").
-- "en" is a natural English translation of that line.
+- "en" is a natural English translation of that line, always in English: never leave a line or phrase in Portuguese (names stay as they are).
 - Leave out music, sound effects, and on-screen text that isn't spoken. Lines must be in time order and must not overlap.${showNotesBlock(showNotes)}`,
       },
     ],
@@ -697,6 +697,8 @@ async function explainWord({ apiKey, model, word, line, en, showNotes = "" }) {
 Word: ${word}
 Caption line: ${line}${en ? `
 English translation of the line (may be loose): ${en}` : ""}
+
+Write everything in English, except "base" and Portuguese words or expressions you quote (e.g. in "note").
 
 Work out the word's meaning from the whole line, not from the word alone. Some forms belong to more than one word, e.g. the preterite of ser and ir are the same (fui, foi, fomos, foram): "Não fui eu" is ser ("it wasn't me"), "Fui à praia" is ir ("I went"). Pick the one this line uses.
 
