@@ -876,6 +876,42 @@ async function startVocab(ids = ["vocab-btn", "vocab-status", "vocab-error"]) {
   }
 }
 
+// The lesson quiz asks Gemini for a few more questions than it needs, so ones that copy a question
+// answered right in the last few days can be dropped.
+const SPARE_QUESTIONS = 4;
+
+// Word overlap (Jaccard, accents and case ignored) between two questions.
+function questionSimilarity(a, b) {
+  const A = new Set(words(a));
+  const B = new Set(words(b));
+  if (!A.size || !B.size) return 0;
+  let both = 0;
+  for (const w of A) if (B.has(w)) both++;
+  return both / (A.size + B.size - both);
+}
+
+// Keeps n of a generated quiz's questions, preferring ones least like questions recently answered right.
+// Anything at or above REPEAT_SIMILARITY counts as a repeat and goes last. Returns the quiz JSON text.
+const REPEAT_SIMILARITY = 0.8;
+function dropRepeats(text, asked, n) {
+  let data;
+  try {
+    data = JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, ""));
+  } catch {
+    return text; // parseQuiz will report it
+  }
+  const raw = Array.isArray(data) ? data : data.questions;
+  if (!Array.isArray(raw) || raw.length <= n) return text;
+  const right = asked.filter((a) => a.correct).map((a) => a.q);
+  const scored = raw.map((q, i) => {
+    const s = Math.max(0, ...right.map((r) => questionSimilarity(q.q || q.question || "", r)));
+    return { q, i, repeat: s >= REPEAT_SIMILARITY };
+  });
+  // Fresh questions first in their original order, repeats only if there aren't enough fresh ones.
+  const kept = [...scored.filter((x) => !x.repeat), ...scored.filter((x) => x.repeat)].slice(0, n).map((x) => x.q);
+  return JSON.stringify(Array.isArray(data) ? kept : { ...data, questions: kept });
+}
+
 // Writes a quiz and starts it.
 //   mode "daily":    today's lesson; counts.
 //   mode "practice": any lesson; counts for nothing.
@@ -911,7 +947,7 @@ async function generateWithGemini({ mode = "daily", lessonIndex = currentLesson,
         digest,
         dailyLesson: dailyLesson?.lessonIndex === lessonIndex ? dailyLesson : null,
         progress,
-        n: settings.questionCount,
+        n: settings.questionCount + SPARE_QUESTIONS,
       });
       minQuestions = settings.questionCount;
     }
@@ -934,6 +970,7 @@ async function generateWithGemini({ mode = "daily", lessonIndex = currentLesson,
       } catch {}
     }
     if (mode === "review") return startReviewQuiz(parseQuiz(text, { minQuestions: 1 }), items, "gemini");
+    text = dropRepeats(text, recentAsked(progress, lessonSlug(syllabus.lessons[lessonIndex])), settings.questionCount);
     const msg = await beginQuiz(text, "gemini", { mode, lessonIndex, minQuestions });
     if (msg) throw new Error(`Gemini's quiz didn't work: ${msg} Try generating again.`);
   } catch (e) {

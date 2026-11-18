@@ -140,7 +140,7 @@ function applyVocab(vocabDoc, results) {
 // progress.askedQuestions: [{ date, lesson (slug), q, correct }], newest first, for the last few days. Quiz
 // prompts list them so Gemini doesn't ask the same questions again (especially ones answered right).
 
-const ASKED_DAYS = 3; // today plus the 3 days before
+const ASKED_DAYS = 7; // today plus the 7 days before
 
 const askedSince = () => addDays(todayKey(), -ASKED_DAYS);
 
@@ -152,7 +152,7 @@ function withAskedQuestions(progress, results, slugOf) {
     .filter((a) => a.q);
   const since = askedSince();
   const kept = (progress.askedQuestions || []).filter((a) => a.date >= since);
-  return { ...progress, askedQuestions: [...added, ...kept].slice(0, 400) };
+  return { ...progress, askedQuestions: [...added, ...kept].slice(0, 600) };
 }
 
 // The recently asked questions on one lesson (by slug), newest first, without duplicates.

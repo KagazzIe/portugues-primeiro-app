@@ -189,7 +189,8 @@ function digestText(d, { brief = false, skipPronunciation = false } = {}) {
   if (!brief && !skipPronunciation) {
     for (const p of d.pronunciation || []) lines.push(`\n## Pronunciation: ${p.topic}\n${p.explanation}${p.examples?.length ? `\nExamples: ${pairs(p.examples)}` : ""}`);
   }
-  if (d.vocabulary?.length) lines.push(`\nVocabulary: ${pairs(brief ? d.vocabulary.slice(0, 12) : d.vocabulary)}`);
+  // Brief digests (review quiz) get a random dozen words, so each day's review draws on different vocabulary.
+  if (d.vocabulary?.length) lines.push(`\nVocabulary: ${pairs(brief ? shuffleArray(d.vocabulary).slice(0, 12) : d.vocabulary)}`);
   if (!brief && d.dialogue) {
     lines.push(`\n## Dialogue: ${d.dialogue.title}\n${d.dialogue.summary}\n${d.dialogue.lines.map((l) => `${l.speaker}: ${l.pt} (${l.en})`).join("\n")}`);
   }
@@ -382,7 +383,7 @@ function performanceNotes(progress, lessonIndex) {
 // Questions asked in the last few days (recentAsked entries), so a new quiz doesn't repeat them.
 // Ones answered right are off limits; ones answered wrong may be tested again with a new sentence.
 function askedSection(asked, { brief = false } = {}) {
-  const right = asked.filter((a) => a.correct).slice(0, 40).map((a) => a.q);
+  const right = asked.filter((a) => a.correct).slice(0, 60).map((a) => a.q);
   const wrong = asked.filter((a) => !a.correct).slice(0, 20).map((a) => a.q);
   if (!right.length && !wrong.length) return "";
   const list = (qs) => qs.map((q) => `  - ${q}`).join("\n");
@@ -415,6 +416,11 @@ async function generateLessonQuiz({ apiKey, model, syllabus, lessonIndex, digest
   const performance = performanceNotes(progress, lessonIndex);
   const variety = varietyOf(syllabus);
   const asked = recentAsked(progress, lessonSlug(lesson));
+  // A random handful of the lesson's words to build sentences around, so each quiz uses different sentences.
+  const words = shuffleArray(digest.vocabulary || []).slice(0, 12).map((v) => `${v.pt} = ${v.en}`);
+  const wordsSection = words.length
+    ? `\nWORDS FOR THIS QUIZ (picked at random so each quiz is different)\nBuild your example sentences mainly around these words from the lesson, where they fit the point being tested: ${words.join("; ")}\n`
+    : "";
 
   const prompt = `You are a Portuguese tutor writing today's quiz for an English-speaking learner studying ${variety}Portuguese with the textbook "${syllabus.title}". Use ${variety}Portuguese spelling and vocabulary.
 
@@ -431,7 +437,7 @@ ${performance ? `
 MY RESULTS ON THIS LESSON
 ${performance}
 Aim the questions at the parts of this lesson I've struggled with, while still covering the rest.
-` : ""}
+` : ""}${wordsSection}
 Write exactly ${plural(n, "question")}, all on this lesson only (nothing from earlier lessons). Leave "reviewOf" empty.
 
 Rules:
