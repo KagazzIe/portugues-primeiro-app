@@ -1,6 +1,5 @@
 const $ = (id) => document.getElementById(id);
 const VIEWS = ["setup-view", "quiz-view", "result-view", "done-view"];
-const MAX_OVERRIDES = 2;
 
 const fromUrl = (() => {
   const raw = new URLSearchParams(location.search).get("from");
@@ -26,7 +25,6 @@ let quizLessonIndex = null;
 let quizMode = "daily"; // "daily", "practice" (counts for nothing), or "review" (only updates the review queue)
 let idx = 0;
 let results = [];      // { question, q, given, correct, expected }
-let overridesLeft = MAX_OVERRIDES;
 
 const lessonTextCache = new Map();
 
@@ -277,7 +275,7 @@ async function answerText() {
   const local = q.vocab ? gradeVocab(q, given) : gradeText(q, given);
   if (local.correct || !settings.geminiApiKey) {
     record(q, given, local.correct, local.note);
-    if (!local.correct && !settings.geminiApiKey && overridesLeft > 0) $("override-btn").hidden = false;
+    if (!local.correct && !settings.geminiApiKey) $("override-btn").hidden = false;
     return;
   }
 
@@ -338,7 +336,7 @@ async function answerText() {
         });
     settle(q, given, verdict.correct, verdict.feedback);
   } catch {
-    if (settle(q, given, false, "(Couldn't reach Gemini to double-check.)") && overridesLeft > 0) $("override-btn").hidden = false;
+    if (settle(q, given, false, "(Couldn't reach Gemini to double-check.)")) $("override-btn").hidden = false;
   }
 }
 
@@ -405,13 +403,12 @@ function record(q, given, correct, note, { skipped = false } = {}) {
 }
 
 function override() {
-  overridesLeft--;
   results[idx].correct = true;
   results[idx].overridden = true;
   $("override-btn").hidden = true;
   const fb = $("feedback");
   fb.className = "feedback good";
-  fb.firstChild.textContent = `Counted as correct (${overridesLeft} override${overridesLeft === 1 ? "" : "s"} left).`;
+  fb.firstChild.textContent = "Counted as correct.";
 }
 
 function next() {
@@ -422,15 +419,14 @@ function next() {
 }
 
 // Before anything is saved: list the questions marked wrong, so one the quiz got wrong (an ambiguous
-// question, a valid answer missing from the key) can be counted as right. Uses the same per-quiz
-// allowance as the "My answer was actually right" button. Skipped questions can't be marked.
+// question, a valid answer missing from the key) can be counted as right. No limit on how many.
+// Skipped questions can't be marked.
 // Returns false (nothing shown) when there's nothing to mark.
 function checkMisses() {
   const misses = results.map((r, i) => ({ r, i })).filter(({ r }) => !r.correct && !r.skipped);
-  if (!misses.length || overridesLeft <= 0) return false;
+  if (!misses.length) return false;
 
   const marked = new Set();
-  const allowance = overridesLeft;
   $("q-progress").textContent = "Before saving";
   $("q-bar").style.width = "100%";
   $("q-text").textContent = "Check your answers";
@@ -442,13 +438,11 @@ function checkMisses() {
   const hint = el("p", null, "hint");
   const buttons = [];
   const update = () => {
-    const left = allowance - marked.size;
-    hint.textContent = `If a question was ambiguous or your answer was also right, mark it as right. ${left} of ${allowance} left for this quiz.`;
+    hint.textContent = "If a question was ambiguous or your answer was also right, mark it as right.";
     buttons.forEach((b, n) => {
       const on = marked.has(misses[n].i);
       b.textContent = on ? "Counted as right ✓ (undo)" : "Mark as right";
       b.classList.toggle("primary", on);
-      b.disabled = !on && left <= 0;
     });
   };
   area.replaceChildren(hint);
@@ -476,7 +470,6 @@ function checkMisses() {
   // Applied when "Save results" is pressed, just before the results are saved.
   pendingMarks = () => {
     for (const i of marked) Object.assign(results[i], { correct: true, overridden: true });
-    overridesLeft -= marked.size;
   };
   return true;
 }
@@ -745,7 +738,6 @@ function startPreparedQuiz(prepared, { mode, lessonIndex, extra = {} }) {
   quizLessonIndex = syllabus ? lessonIndex : null;
   idx = 0;
   results = [];
-  overridesLeft = MAX_OVERRIDES;
   pendingMarks = null;
   show("quiz-view");
   renderQuestion();
