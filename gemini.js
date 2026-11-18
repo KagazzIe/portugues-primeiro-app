@@ -652,6 +652,7 @@ async function generateCaptions({ apiKey, model, videoId, showNotes = "" }) {
 - Split it into caption lines of one short sentence or clause each: at most about 12 words and 6 seconds per line.
 - "start" and "end" are when the line is spoken, as MM:SS.s timestamps from the start of the video (e.g. "01:07.5"). Be as exact as you can: captions are shown in sync with the video.
 - "pt" uses correct Portuguese spelling with accents (post-2009 spelling).
+- Write every word in its standard dictionary spelling, even when it isn't pronounced that way: a character's speech quirk (a lisp, swapping R for L, baby talk), a regional or rural accent, or a mispronunciation. Write the word they mean ("gorducha", not "golducha"; "acho", not "asho"; "você", not "ocê"), never a spelling made up to imitate the sound. Common informal forms that Brazilians also write are fine ("pra", "tá", "tô", "né").
 - "en" is a natural English translation of that line.
 - Leave out music, sound effects, and on-screen text that isn't spoken. Lines must be in time order and must not overlap.${showNotesBlock(showNotes)}`,
       },
