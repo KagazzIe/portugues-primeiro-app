@@ -17,6 +17,20 @@ async function geminiFetch(url, init) {
     try {
       msg = (await res.json()).error.message || msg;
     } catch {}
+    // A used-up daily quota: retrying won't help until it resets, so say that plainly.
+    if (res.status === 429 && /per ?day/i.test(msg)) {
+      const model = (msg.match(/model: ([\w.-]+)/) || [])[1] || "this model";
+      const limit = (msg.match(/limit: (\d+)/) || [])[1];
+      const wait = (msg.match(/retry in ((?:\d+h)?(?:\d+m)?)/) || [])[1];
+      const e = new GeminiError(
+        `Gemini's free daily limit for ${model} is used up${limit ? ` (${limit} requests a day)` : ""}. ` +
+          `It resets at midnight Pacific time${wait ? `, in about ${wait}` : ""}. ` +
+          `Until then, try again later or pick another model in Settings (each model has its own limit).`,
+        429
+      );
+      e.daily = true;
+      throw e;
+    }
     throw new GeminiError(msg, res.status);
   }
   return res;
@@ -41,7 +55,7 @@ async function generateJson({ apiKey, model, parts, schema, temperature, config 
       res = await request();
       break;
     } catch (e) {
-      if (!(e instanceof GeminiError) || ![429, 503].includes(e.status) || attempt >= 3) throw e;
+      if (!(e instanceof GeminiError) || ![429, 503].includes(e.status) || e.daily || attempt >= 3) throw e;
       await sleep(20000 * (attempt + 1));
     }
   }
