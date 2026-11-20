@@ -396,6 +396,10 @@ function record(q, given, correct, note, { skipped = false } = {}) {
   if (note) add(note);
   if (q.translation) add(`Translation: ${q.translation}`);
   if (q.explain) add(q.explain);
+  if (!correct) {
+    const link = textbookLink(q);
+    if (link) fb.append(link);
+  }
   fb.hidden = false;
   $("next-btn").hidden = false;
   $("next-btn").textContent = idx === quiz.questions.length - 1 ? "See results" : "Next →";
@@ -475,6 +479,22 @@ function checkMisses() {
 }
 let pendingMarks = null;
 
+// Review questions only: a link that opens the question's lesson in the textbook (its first chapter).
+function textbookLink(q) {
+  if (quizMode !== "review" || q.lessonIndex == null) return null;
+  const url = syllabus?.lessons[q.lessonIndex]?.sources?.[0]?.link;
+  if (!url) return null;
+  const a = el("a", `Read ${q.lessonTitle || "this lesson"} in the textbook ↗`);
+  a.href = url;
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    browser.tabs.create({ url });
+  });
+  const p = el("p", null, "textbook-link");
+  p.append(a);
+  return p;
+}
+
 const kindOf = (q) => (!q.reviewOf ? "new" : q.reviewOf === "earlier" ? "earlier" : "review");
 
 function renderMisses(intro) {
@@ -485,6 +505,8 @@ function renderMisses(intro) {
   for (const r of misses) {
     const div = el("div", null, "review-item");
     div.append(el("div", r.q, "q"), el("div", r.skipped ? "You: skipped" : `You: ${r.given}`, "yours"), el("div", `Correct: ${r.expected}${r.question.translation ? ` (${r.question.translation})` : ""}`, "right"));
+    const link = textbookLink(r.question);
+    if (link) div.append(link);
     reviewEl.append(div);
   }
 }
