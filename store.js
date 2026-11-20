@@ -194,6 +194,14 @@ async function saveResult(record) {
 // First connection on a device: adopt what's in the repo, or seed the repo from this device.
 async function connectGitHub(cfg) {
   await ghCheckRepo(cfg);
+  // Same repo, new token (the old one expired): push what this device saved while sync was failing,
+  // then download. Starting over would throw those changes away (and with them, a finished day).
+  const { githubRepo: prevRepo } = await browser.storage.local.get("githubRepo");
+  if (prevRepo && prevRepo.toLowerCase() === cfg.repo.toLowerCase()) {
+    await browser.storage.local.set({ githubToken: cfg.token, githubRepo: cfg.repo });
+    await syncDown();
+    return ["New token saved; changes made while sync was failing were uploaded"];
+  }
   await browser.storage.local.set({ githubToken: cfg.token, githubRepo: cfg.repo, "sync:dirty": [] });
   const report = [];
   for (const [name, doc] of Object.entries(DOCS)) {
