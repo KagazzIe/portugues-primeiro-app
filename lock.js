@@ -288,7 +288,6 @@ async function answerText() {
   const local = q.vocab ? gradeVocab(q, given) : gradeText(q, given);
   if (local.correct || !settings.geminiApiKey) {
     record(q, given, local.correct, local.note);
-    if (!local.correct && !settings.geminiApiKey) $("override-btn").hidden = false;
     return;
   }
 
@@ -349,7 +348,7 @@ async function answerText() {
         });
     settle(q, given, verdict.correct, verdict.feedback);
   } catch {
-    if (settle(q, given, false, "(Couldn't reach Gemini to double-check.)")) $("override-btn").hidden = false;
+    settle(q, given, false, "(Couldn't reach Gemini to double-check.)");
   }
 }
 
@@ -396,6 +395,7 @@ function record(q, given, correct, note, { skipped = false } = {}) {
   results[idx] = { question: q, q: q.q, given, correct, expected: q.expected, skipped };
   if (!skipped) playSound(correct);
   $("skip-btn").hidden = true;
+  $("override-btn").hidden = correct || skipped;
   const fb = $("feedback");
   fb.className = `feedback ${correct ? "good" : "bad"}`;
   fb.replaceChildren();
@@ -431,66 +431,54 @@ function override() {
 function next() {
   idx++;
   if (idx < quiz.questions.length) renderQuestion();
-  else if (idx === quiz.questions.length && checkMisses()) return; // "Save results" calls next() again
-  else finish();
+  else showResults();
 }
 
-// Before anything is saved: list the questions marked wrong, so one the quiz got wrong (an ambiguous
-// question, a valid answer missing from the key) can be counted as right. No limit on how many.
-// Skipped questions can't be marked.
-// Returns false (nothing shown) when there's nothing to mark.
-function checkMisses() {
-  const misses = results.map((r, i) => ({ r, i })).filter(({ r }) => !r.correct && !r.skipped);
-  if (!misses.length) return false;
-
-  const marked = new Set();
-  $("q-progress").textContent = "Before saving";
-  $("q-bar").style.width = "100%";
-  $("q-text").textContent = "Check your answers";
-  for (const id of ["feedback", "check-btn", "skip-btn", "override-btn"]) $(id).hidden = true;
-  $("next-btn").hidden = false;
-  $("next-btn").textContent = "Save results";
-
-  const area = $("q-answer");
-  const hint = el("p", null, "hint");
-  const buttons = [];
-  const update = () => {
-    hint.textContent = "If a question was ambiguous or your answer was also right, mark it as right.";
-    buttons.forEach((b, n) => {
-      const on = marked.has(misses[n].i);
-      b.textContent = on ? "Counted as right ✓ (undo)" : "Mark as right";
-      b.classList.toggle("primary", on);
-    });
-  };
-  area.replaceChildren(hint);
-  for (const { r, i } of misses) {
-    const div = el("div", null, "review-item");
+// The results screen, before anything is saved: the score plus each question marked wrong, so one the
+// quiz got wrong (an ambiguous question, a valid answer missing from the key) can be counted as right.
+// The score updates as you mark; "Save results" saves and the same screen then shows the outcome.
+// Skipped questions can be marked too. With nothing to mark, it saves straight away.
+function showResults() {
+  const misses = results.filter((r) => !r.correct);
+  if (!misses.length) return finish();
+  startResults();
+  $("result-title").textContent = "Check your answers";
+  const reviewEl = $("review");
+  reviewEl.replaceChildren(
+    el("p", "If a question was ambiguous or your answer was also right, mark it as right. Nothing is saved until you press Save results.", "hint")
+  );
+  for (const r of misses) {
     const b = el("button", "Mark as right");
     b.addEventListener("click", () => {
-      if (marked.has(i)) marked.delete(i);
-      else marked.add(i);
-      update();
+      r.correct = !r.correct;
+      if (r.correct) r.overridden = true;
+      else delete r.overridden;
+      b.textContent = r.correct ? "Counted as right ✓ (undo)" : "Mark as right";
+      b.classList.toggle("primary", r.correct);
+      showScore();
     });
-    buttons.push(b);
     const row = el("div", null, "row");
     row.append(b);
+    const div = el("div", null, "review-item");
     div.append(
       el("div", r.q, "q"),
-      el("div", `You: ${r.given}`, "yours"),
+      el("div", r.skipped ? "You: skipped" : `You: ${r.given}`, "yours"),
       el("div", `Answer key: ${r.expected}${r.question.translation ? ` (${r.question.translation})` : ""}`, "right"),
       row
     );
-    area.append(div);
+    reviewEl.append(div);
   }
-  update();
-
-  // Applied when "Save results" is pressed, just before the results are saved.
-  pendingMarks = () => {
-    for (const i of marked) Object.assign(results[i], { correct: true, overridden: true });
-  };
-  return true;
+  const save = $("save-btn");
+  save.textContent = quizMode === "practice" ? "Finish" : "Save results";
+  save.hidden = false;
+  save.focus();
 }
-let pendingMarks = null;
+
+function saveResults() {
+  $("save-btn").hidden = true;
+  for (const b of $("review").querySelectorAll("button")) b.disabled = true;
+  finish();
+}
 
 // Review questions only: a link that opens the question's lesson in the textbook (its first chapter).
 function textbookLink(q) {
@@ -524,20 +512,25 @@ function renderMisses(intro) {
   }
 }
 
-// Shows the score and hides every results button; returns the counts.
-function startResults() {
+function showScore() {
   const total = results.length;
   const right = results.filter((r) => r.correct).length;
   const pct = Math.round((right / total) * 100);
-  $("result-title").textContent = "Saving…";
   $("result-score").textContent = `${right}/${total} (${pct}%)`;
   $("result-score").style.color = pct >= settings.passPercent ? "var(--green)" : "var(--red)";
-  $("review").replaceChildren();
+  return { total, right, pct };
+}
+
+// Shows the score and hides every results button; returns the counts. The list of misses stays on
+// screen (with its buttons disabled) until the caller redraws it.
+function startResults() {
+  const score = showScore();
+  $("result-title").textContent = "Saving…";
   $("next-lesson").hidden = true;
-  for (const id of ["retry-btn", "continue-btn", "to-practice", "practice-again", "practice-done"]) $(id).hidden = true;
+  for (const id of ["retry-btn", "continue-btn", "to-practice", "practice-again", "practice-done", "save-btn"]) $(id).hidden = true;
   $("q-bar").style.width = "100%";
   show("result-view");
-  return { total, right, pct };
+  return score;
 }
 
 // A practice quiz only shows the score and what was missed; nothing is saved.
@@ -616,14 +609,10 @@ async function finishVocab() {
 }
 
 async function finish() {
-  pendingMarks?.();
-  pendingMarks = null;
   if (quizMode === "practice") return finishPractice();
   if (quizMode === "review") return finishReview();
   if (quizMode === "vocab") return finishVocab();
-  const total = results.length;
-  const right = results.filter((r) => r.correct).length;
-  const pct = Math.round((right / total) * 100);
+  const { total, right, pct } = startResults();
   const passed = pct >= settings.passPercent;
   const today = todayKey();
   const lessonIndex = quizLessonIndex;
@@ -632,14 +621,6 @@ async function finish() {
   const firstToday = isFirstAttempt(progress);
   const earnedAdvance = passed && firstToday && pct >= settings.advancePercent;
   const lastIndex = syllabus ? syllabus.lessons.length - 1 : 0;
-  $("result-title").textContent = "Saving…";
-  $("result-score").textContent = `${right}/${total} (${pct}%)`;
-  $("result-score").style.color = passed ? "var(--green)" : "var(--red)";
-  $("review").replaceChildren();
-  $("next-lesson").hidden = true;
-  $("retry-btn").hidden = $("continue-btn").hidden = $("to-practice").hidden = true;
-  $("practice-again").hidden = $("practice-done").hidden = true;
-  show("result-view");
 
   const entry = {
     date: today,
@@ -773,7 +754,6 @@ function startPreparedQuiz(prepared, { mode, lessonIndex, extra = {} }) {
   quizLessonIndex = syllabus ? lessonIndex : null;
   idx = 0;
   results = [];
-  pendingMarks = null;
   show("quiz-view");
   renderQuestion();
 }
@@ -1521,6 +1501,7 @@ function wire() {
   $("check-btn").addEventListener("click", answerText);
   $("skip-btn").addEventListener("click", skip);
   $("override-btn").addEventListener("click", override);
+  $("save-btn").addEventListener("click", saveResults);
   $("next-btn").addEventListener("click", next);
   $("retry-btn").addEventListener("click", () => {
     show("setup-view");
