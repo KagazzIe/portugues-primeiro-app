@@ -85,6 +85,10 @@ pre {
 .option { display: block; width: 100%; text-align: left; margin-bottom: 8px; padding: 12px 14px; }
 .option.correct { background: var(--green-soft); border-color: var(--green); }
 .option.wrong { background: var(--red-soft); border-color: var(--red); }
+.option.mark .q { font-weight: 600; }
+.option.mark .yours { color: var(--red); }
+.option.mark .right { color: var(--green); }
+.option.mark .state { margin-top: 6px; font-size: .9rem; font-weight: 600; }
 
 .feedback { margin-top: 12px; padding: 12px 14px; border-radius: 8px; }
 .feedback.good { background: var(--green-soft); }

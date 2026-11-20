@@ -233,7 +233,6 @@ function renderQuestion() {
   $("q-text").textContent = q.q;
   $("feedback").hidden = true;
   $("next-btn").hidden = true;
-  $("override-btn").hidden = true;
   $("skip-btn").hidden = false;
 
   const area = $("q-answer");
@@ -395,7 +394,6 @@ function record(q, given, correct, note, { skipped = false } = {}) {
   results[idx] = { question: q, q: q.q, given, correct, expected: q.expected, skipped };
   if (!skipped) playSound(correct);
   $("skip-btn").hidden = true;
-  $("override-btn").hidden = correct || skipped;
   const fb = $("feedback");
   fb.className = `feedback ${correct ? "good" : "bad"}`;
   fb.replaceChildren();
@@ -419,25 +417,16 @@ function record(q, given, correct, note, { skipped = false } = {}) {
   $("next-btn").focus();
 }
 
-function override() {
-  results[idx].correct = true;
-  results[idx].overridden = true;
-  $("override-btn").hidden = true;
-  const fb = $("feedback");
-  fb.className = "feedback good";
-  fb.firstChild.textContent = "Counted as correct.";
-}
-
 function next() {
   idx++;
   if (idx < quiz.questions.length) renderQuestion();
   else showResults();
 }
 
-// The results screen, before anything is saved: the score plus each question marked wrong, so one the
-// quiz got wrong (an ambiguous question, a valid answer missing from the key) can be counted as right.
-// The score updates as you mark; "Save results" saves and the same screen then shows the outcome.
-// Skipped questions can be marked too. With nothing to mark, it saves straight away.
+// The only place to count a question as right by hand: the results screen, before anything is saved.
+// Each question marked wrong (skipped ones included) is a card; clicking it toggles it between wrong and
+// right, and the score updates. "Save results" saves, then the same screen shows the outcome.
+// With nothing to mark, it saves straight away.
 function showResults() {
   const misses = results.filter((r) => !r.correct);
   if (!misses.length) return finish();
@@ -445,28 +434,32 @@ function showResults() {
   $("result-title").textContent = "Check your answers";
   const reviewEl = $("review");
   reviewEl.replaceChildren(
-    el("p", "If a question was ambiguous or your answer was also right, mark it as right. Nothing is saved until you press Save results.", "hint")
+    el("p", "Click any question you want counted as right (click again to undo), then save.", "hint")
   );
   for (const r of misses) {
-    const b = el("button", "Mark as right");
-    b.addEventListener("click", () => {
+    const state = el("div", null, "state");
+    const card = el("button", null, "option mark");
+    const paint = () => {
+      card.classList.toggle("wrong", !r.correct);
+      card.classList.toggle("correct", r.correct);
+      card.setAttribute("aria-pressed", String(r.correct));
+      state.textContent = r.correct ? "✓ Counted as right" : "✗ Counted as wrong";
+    };
+    card.addEventListener("click", () => {
       r.correct = !r.correct;
       if (r.correct) r.overridden = true;
       else delete r.overridden;
-      b.textContent = r.correct ? "Counted as right ✓ (undo)" : "Mark as right";
-      b.classList.toggle("primary", r.correct);
+      paint();
       showScore();
     });
-    const row = el("div", null, "row");
-    row.append(b);
-    const div = el("div", null, "review-item");
-    div.append(
+    card.append(
       el("div", r.q, "q"),
       el("div", r.skipped ? "You: skipped" : `You: ${r.given}`, "yours"),
       el("div", `Answer key: ${r.expected}${r.question.translation ? ` (${r.question.translation})` : ""}`, "right"),
-      row
+      state
     );
-    reviewEl.append(div);
+    paint();
+    reviewEl.append(card);
   }
   const save = $("save-btn");
   save.textContent = quizMode === "practice" ? "Finish" : "Save results";
@@ -1500,7 +1493,6 @@ function wire() {
   $("to-practice").addEventListener("click", backToDone);
   $("check-btn").addEventListener("click", answerText);
   $("skip-btn").addEventListener("click", skip);
-  $("override-btn").addEventListener("click", override);
   $("save-btn").addEventListener("click", saveResults);
   $("next-btn").addEventListener("click", next);
   $("retry-btn").addEventListener("click", () => {
