@@ -172,6 +172,19 @@ function findGiveaways(text) {
       problems.push(`Question ${i + 1} ("${q.q || q.question}"): its answer "${answer}" is already written in the question.`);
       return;
     }
+    // "Which sentence correctly uses 'menos'?" where only the correct option contains menos.
+    // Quoted English words ('fewer') never match Portuguese options, so only the tested word counts.
+    if (Array.isArray(q.options) && q.options.length >= 3) {
+      const has = (text, term) => ` ${words(text).join(" ")} `.includes(` ${term} `);
+      const quoted = [...String(q.q || q.question || "").matchAll(/(?<![a-z])['"‘“]([^'"‘’“”]{1,40})['"’”](?![a-z])/gi)] // not apostrophes in "doesn't"
+        .map((m) => words(m[1]).join(" "))
+        .filter((t) => t && t.split(" ").length <= 3);
+      const telling = quoted.find((t) => has(answer, t) && q.options.filter((o) => has(o, t)).length === 1);
+      if (telling) {
+        problems.push(`Question ${i + 1} ("${q.q || q.question}"): the question names "${telling}" and the correct option is the only one containing it, so the answer is given away. Make every option use "${telling}" (correctly in one, wrongly in the others) or don't name it.`);
+        return;
+      }
+    }
     // Options like "a casa / o problema / a aula" where the correct one is the only one with its article.
     if (Array.isArray(q.options) && q.options.length >= 3) {
       const article = (o) => {
