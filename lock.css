@@ -89,6 +89,10 @@ pre {
 .option.mark .yours { color: var(--red); }
 .option.mark .right { color: var(--green); }
 .option.mark .state { margin-top: 6px; font-size: .9rem; font-weight: 600; }
+/* Unmarked cards stay plain (a thin red stripe only); marked ones turn green. */
+.option.mark.wrong { background: var(--card); border-color: var(--border); border-left: 4px solid var(--red); }
+.option.mark.wrong:hover { border-color: var(--green); border-left-color: var(--red); }
+.option.mark.wrong .state { color: var(--muted); }
 
 .feedback { margin-top: 12px; padding: 12px 14px; border-radius: 8px; }
 .feedback.good { background: var(--green-soft); }
