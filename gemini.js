@@ -161,7 +161,8 @@ Another model will later teach the lesson using ONLY your digest, so include eve
 - "pronunciation": pronunciation topics, or [] if none.
 - "vocabulary": all the lesson's vocabulary, nouns with their article, grouped by "category".
 - "dialogue": the lesson's dialogue with English translations, or null.
-- "exercises": 5-15 practice items from the chapter's exercises, rewritten to stand alone, with answers.
+- "exercises": 5-15 practice items from the chapter's exercises, rewritten to stand alone, with answers.${isBrazilian(syllabus) ? `
+- Leave out European (continental) Portuguese material, even when the chapter shows it "for recognition": ${EUROPEAN_EXAMPLES}. Give only the Brazilian forms.` : ""}
 
 LESSON: ${lesson.title}
 """
@@ -180,6 +181,14 @@ ${lessonText}
     ...JSON.parse(text),
   };
 }
+
+// The textbook teaches Brazilian Portuguese but shows some European (continental) forms "for recognition".
+// The learner doesn't want those, so keep them out of digests, lessons and quizzes.
+const EUROPEAN_EXAMPLES = "estar a + infinitive (está a falar), pronouns attached as vemo-los / fá-lo / veem-no, the contractions mo / lho / no-lo, and European-only words or spellings (dezasseis, comboio, autocarro)";
+const isBrazilian = (syllabus) => syllabus?.variety === "Brazilian";
+const brazilianOnlyRule = (syllabus) => isBrazilian(syllabus)
+  ? `\n- Brazilian Portuguese only: don't teach, test or use European (continental) Portuguese forms, such as ${EUROPEAN_EXAMPLES}. Mentioning Portugal as a place is fine.`
+  : "";
 
 // The learner can opt out of pronunciation (settings.skipPronunciation).
 const NO_PRONUNCIATION_RULE =
@@ -304,7 +313,7 @@ Teach ONLY this lesson, from the digest below. Don't introduce grammar or vocabu
 - "tables": the digest tables to show in this section, by topic name. The page shows each table exactly as the digest has it, so don't write its contents out in "body"; teach around it. Place every table, each in one section: ${tables.map((t) => `"${t.topic}"`).join(", ")}.` : ""}
 - "vocabulary": the 8-20 words and phrases to learn today, from this lesson, nouns with their article.
 - "practice": 4-6 quick self-check items with answers, all testing what this lesson's sections taught. Don't give away the answer in the item.
-- "recap": 2-3 sentences summing up.${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
+- "recap": 2-3 sentences summing up.${brazilianOnlyRule(syllabus)}${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
 ${performance ? `\nMY RESULTS ON THIS LESSON\n${performance}\n` : ""}
 LESSON DIGEST
 ${digestText(digest, { skipPronunciation })}`,
@@ -458,7 +467,7 @@ Write exactly ${plural(n, "question")}, all on this lesson only (nothing from ea
 Rules:
 ${QUESTION_RULES}
 - Base the questions on what I was taught today, using new sentences rather than copying its examples. The digest is the full reference for this lesson.
-- Only use vocabulary and grammar from this lesson (plus basics it relies on).${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
+- Only use vocabulary and grammar from this lesson (plus basics it relies on).${brazilianOnlyRule(syllabus)}${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
 - "lesson" is "${lesson.title}".${noRepeatRule(progress, asked)}
 ${askedSection(asked)}`;
 
@@ -511,7 +520,7 @@ LESSONS
 ${blocks.join("\n\n")}
 
 Rules:
-${OPEN_QUESTION_RULES}${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
+${OPEN_QUESTION_RULES}${brazilianOnlyRule(syllabus)}${skipPronunciation ? NO_PRONUNCIATION_RULE : ""}
 - "lesson" is "Review".${noRepeatRule(progress, items.flatMap((it) => recentAsked(progress, it.id)))}`;
 
   return generateJson({ apiKey, model, parts: [{ text: prompt }], schema: reviewSchema(items.map((it) => it.id)), temperature: 1 });
@@ -538,7 +547,7 @@ Check every question:
 3. Written questions: "accept" must list every correct alternative (with or without the subject pronoun or article where the question allows it, masculine/feminine where the question is ambiguous) and nothing incorrect.
 4. Vocabulary hints: if a question gives the Portuguese for some words, it must give it for every word needed that isn't in the lesson vocabulary below, and say when two English words map to the same Portuguese word (e.g. "trip" and "voyage" are both viagem).
 5. No giveaways: a question must not contain its own answer or an obvious form of it. Check every example sentence inside a question: "Which verb states location, as in 'Isabel está na Europa'?" gives away ESTAR, and "Which verb expresses a profession, as in 'Ele é médico'?" gives away SER. Replace the giveaway word with a blank ("Isabel ___ na Europa"), or rewrite the question. Translation prompts must be fully in English apart from names, with no Portuguese from the answer in them and no hint that covers the point being tested: "Translate: 'Good morning, seu Antônio.' (use 'bom dia')" gives away the whole answer. Also check that the correct option isn't the only one that fits the question's grammar or wording (if the question names a word, like "Which sentence correctly uses 'menos'?", every option must contain that word, or the one that does is the answer), and that options don't carry markers that reveal the answer: for a gender question, "a casa / o problema / a aula / a porta" gives away the masculine noun through its article, so list bare nouns instead.
-6. Each question must be answerable from its own text and must stick to the lesson.${skipPronunciation ? "\n7. No pronunciation questions (sounds, stress, syllables, which accent mark a word takes). Replace any with a question on the lesson's grammar or vocabulary." : ""}
+6. Each question must be answerable from its own text and must stick to the lesson.${isBrazilian(syllabus) ? `\n7. Brazilian Portuguese only: replace any question that tests or uses European (continental) forms, such as ${EUROPEAN_EXAMPLES}.` : ""}${skipPronunciation ? `\n${isBrazilian(syllabus) ? 8 : 7}. No pronunciation questions (sounds, stress, syllables, which accent mark a word takes). Replace any with a question on the lesson's grammar or vocabulary.` : ""}
 
 Keep the same number of questions in the same order, and keep each question's "type", "reviewOf", "lessonId" (if it has one), and the quiz's "lesson". Only rewrite or replace questions that have a problem; leave good ones exactly as they are.
 ${problems.length ? `
