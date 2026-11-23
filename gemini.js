@@ -434,12 +434,71 @@ function noRepeatRule(progress, asked) {
   return recent.length ? `\n- Don't repeat any of these recent questions:\n${recent.slice(0, 20).map((q) => `  - ${q}`).join("\n")}` : "";
 }
 
+// ---------- Topic coverage ----------
+// Lesson quiz questions are each tagged with a topic: one of the digest's grammar topics, or "Vocabulary".
+
+const VOCAB_TOPIC = "Vocabulary";
+
+function quizTopics(digest) {
+  const topics = [...new Set((digest?.grammar || []).map((g) => g.topic).filter(Boolean))];
+  if (digest?.vocabulary?.length) topics.push(VOCAB_TOPIC);
+  return topics;
+}
+
+// The lesson quiz schema, with each question's "topic" limited to the lesson's topics.
+function lessonQuizSchema(topics) {
+  if (!topics.length) return QUIZ_SCHEMA;
+  const item = QUIZ_SCHEMA.properties.questions.items;
+  return {
+    ...QUIZ_SCHEMA,
+    properties: {
+      ...QUIZ_SCHEMA.properties,
+      questions: {
+        type: "ARRAY",
+        items: {
+          ...item,
+          properties: { ...item.properties, topic: { type: "STRING", format: "enum", enum: topics } },
+          required: [...item.required, "topic"],
+        },
+      },
+    },
+  };
+}
+
+// How many questions to write on each topic: topics asked least come first (never-asked ones before
+// everything), ties going to the one missed most, then at random. Questions are dealt out one per topic in
+// that order and round again, so every topic gets one before any gets two (when there are enough questions).
+// coverage: progress.topicsAsked[slug]. Returns [{ topic, n, asked, wrong }] in priority order.
+function topicPlan(topics, coverage, n) {
+  const c = (t) => coverage?.[t] || { asked: 0, wrong: 0 };
+  const order = shuffleArray(topics).sort((a, b) => c(a).asked - c(b).asked || c(b).wrong - c(a).wrong);
+  const counts = new Map(order.map((t) => [t, 0]));
+  for (let i = 0; i < n && order.length; i++) {
+    const t = order[i % order.length];
+    counts.set(t, counts.get(t) + 1);
+  }
+  return order.filter((t) => counts.get(t)).map((t) => ({ topic: t, n: counts.get(t), ...c(t) }));
+}
+
+function topicPlanSection(plan) {
+  if (!plan.length) return "";
+  const seen = (p) => (p.asked ? `asked ${plural(p.asked, "time")} before${p.wrong ? `, ${p.wrong} wrong` : ""}` : "NEVER asked before");
+  return `
+TOPIC PLAN (topics I've been asked least come first)
+I want to be tested on parts of this lesson I haven't been asked about yet. Write this many questions on each topic, and set each question's "topic" to the topic it tests, exactly as named here:
+${plan.map((p) => `- "${p.topic}": ${plural(p.n, "question")} (${seen(p)})`).join("\n")}
+Within a topic, test the parts of it not covered by the questions listed further down.
+`;
+}
+
 // The daily (and practice) quiz: today's lesson only. Older material is covered by the review quiz.
 async function generateLessonQuiz({ apiKey, model, syllabus, lessonIndex, digest, dailyLesson, progress, n, skipPronunciation }) {
   const lesson = syllabus.lessons[lessonIndex];
   const performance = performanceNotes(progress, lessonIndex);
   const variety = varietyOf(syllabus);
   const asked = recentAsked(progress, lessonSlug(lesson));
+  const topics = quizTopics(digest);
+  const plan = topicPlan(topics, progress.topicsAsked?.[lessonSlug(lesson)], n);
   // A random handful of the lesson's words to build sentences around, so each quiz uses different sentences.
   const words = shuffleArray(digest.vocabulary || []).slice(0, 12).map((v) => `${v.pt} = ${v.en}`);
   const wordsSection = words.length
@@ -460,8 +519,8 @@ ${digestText(digest, { skipPronunciation })}
 ${performance ? `
 MY RESULTS ON THIS LESSON
 ${performance}
-Aim the questions at the parts of this lesson I've struggled with, while still covering the rest.
-` : ""}${wordsSection}
+${plan.length ? "Where a topic has parts I've struggled with, aim its questions there." : "Aim the questions at the parts of this lesson I've struggled with, while still covering the rest."}
+` : ""}${topicPlanSection(plan)}${wordsSection}
 Write exactly ${plural(n, "question")}, all on this lesson only (nothing from earlier lessons). Leave "reviewOf" empty.
 
 Rules:
@@ -471,7 +530,7 @@ ${QUESTION_RULES}
 - "lesson" is "${lesson.title}".${noRepeatRule(progress, asked)}
 ${askedSection(asked)}`;
 
-  return generateJson({ apiKey, model, parts: [{ text: prompt }], schema: QUIZ_SCHEMA, temperature: 1 });
+  return generateJson({ apiKey, model, parts: [{ text: prompt }], schema: lessonQuizSchema(topics), temperature: 1 });
 }
 
 // Review quiz schema: open-ended questions only, each tagged with the lesson it reviews.
@@ -490,8 +549,9 @@ function reviewSchema(lessonIds) {
             ...props,
             type: { type: "STRING", enum: ["text"] },
             lessonId: { type: "STRING", format: "enum", enum: lessonIds },
+            topic: { type: "STRING" },
           },
-          required: [...item.required, "lessonId"],
+          required: [...item.required, "lessonId", "topic"],
         },
       },
     },
@@ -506,14 +566,23 @@ async function generateReviewQuiz({ apiKey, model, syllabus, items, progress, sk
     const body = it.digest ? digestText(it.digest, { brief: true }) : it.lesson.title;
     const m = it.mistake;
     const miss = m ? `\nI GOT THIS WRONG BEFORE [${m.id}]: Question: ${m.q} | Correct answer: ${m.expected}${m.explain ? ` | Rule: ${m.explain}` : ""}` : "";
-    return `### lessonId: ${it.id}\n${body}${miss}${askedSection(recentAsked(progress, it.id), { brief: true })}`;
+    const topics = quizTopics(it.digest);
+    const target = topicPlan(topics, progress.topicsAsked?.[it.id], 1)[0];
+    const seen = target && (target.asked ? `asked ${plural(target.asked, "time")} before` : "NEVER asked before");
+    const topicLine = !topics.length
+      ? ""
+      : m
+        ? `\nTopics (set "topic" to the one the question tests): ${topics.map((t) => `"${t}"`).join(", ")}`
+        : `\nTEST THIS TOPIC: "${target.topic}" (${seen}). Set "topic" to "${target.topic}".`;
+    return `### lessonId: ${it.id}\n${body}${topicLine}${miss}${askedSection(recentAsked(progress, it.id), { brief: true })}`;
   });
 
   const prompt = `You are a Portuguese tutor writing a review quiz for an English-speaking learner studying ${variety}Portuguese with the textbook "${syllabus.title}". Use ${variety}Portuguese spelling and vocabulary.
 
 Write exactly ${plural(items.length, "question")}: ONE question for each lesson below, in the order listed. Set "lessonId" to that lesson's id.
 - If a lesson shows something I got wrong before, write a NEW question testing that same point with a different sentence or wording, and set "reviewOf" to its id (the text in square brackets).
-- Otherwise test something central to that lesson (a key grammar point or useful vocabulary), and set "reviewOf" to "earlier".
+- Otherwise test the topic named under "TEST THIS TOPIC" (I want to be asked about parts of each lesson I haven't been asked about yet), and set "reviewOf" to "earlier". For the "Vocabulary" topic, test words from that lesson's vocabulary.
+- Set "topic" to the lesson's topic the question tests, exactly as named for that lesson ("" if the lesson lists no topics).
 - Each question must only need that lesson's material (plus basics from before it).
 
 LESSONS
@@ -549,7 +618,7 @@ Check every question:
 5. No giveaways: a question must not contain its own answer or an obvious form of it. Check every example sentence inside a question: "Which verb states location, as in 'Isabel está na Europa'?" gives away ESTAR, and "Which verb expresses a profession, as in 'Ele é médico'?" gives away SER. Replace the giveaway word with a blank ("Isabel ___ na Europa"), or rewrite the question. Translation prompts must be fully in English apart from names, with no Portuguese from the answer in them and no hint that covers the point being tested: "Translate: 'Good morning, seu Antônio.' (use 'bom dia')" gives away the whole answer. Also check that the correct option isn't the only one that fits the question's grammar or wording (if the question names a word, like "Which sentence correctly uses 'menos'?", every option must contain that word, or the one that does is the answer), and that options don't carry markers that reveal the answer: for a gender question, "a casa / o problema / a aula / a porta" gives away the masculine noun through its article, so list bare nouns instead.
 6. Each question must be answerable from its own text and must stick to the lesson.${isBrazilian(syllabus) ? `\n7. Brazilian Portuguese only: replace any question that tests or uses European (continental) forms, such as ${EUROPEAN_EXAMPLES}.` : ""}${skipPronunciation ? `\n${isBrazilian(syllabus) ? 8 : 7}. No pronunciation questions (sounds, stress, syllables, which accent mark a word takes). Replace any with a question on the lesson's grammar or vocabulary.` : ""}
 
-Keep the same number of questions in the same order, and keep each question's "type", "reviewOf", "lessonId" (if it has one), and the quiz's "lesson". Only rewrite or replace questions that have a problem; leave good ones exactly as they are.
+Keep the same number of questions in the same order, and keep each question's "type", "reviewOf", "lessonId" and "topic" (if it has them), and the quiz's "lesson". A replacement question tests the same topic. Only rewrite or replace questions that have a problem; leave good ones exactly as they are.
 ${problems.length ? `
 THESE PROBLEMS WERE FOUND AUTOMATICALLY. Fix them first by rewriting those questions so the answer isn't in the question:
 ${problems.map((p) => `- ${p}`).join("\n")}

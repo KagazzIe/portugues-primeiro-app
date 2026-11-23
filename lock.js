@@ -119,6 +119,7 @@ function parseQuiz(text, { minQuestions = settings.questionCount } = {}) {
         explain: q.explain || "",
         reviewOf: q.reviewOf || "",
         lessonId: q.lessonId || "",
+        topic: typeof q.topic === "string" ? q.topic : "",
       });
     } else {
       if (!q.answer) throw new Error(`Question ${n} has no answer.`);
@@ -130,6 +131,7 @@ function parseQuiz(text, { minQuestions = settings.questionCount } = {}) {
         explain: q.explain || "",
         reviewOf: q.reviewOf || "",
         lessonId: q.lessonId || "",
+        topic: typeof q.topic === "string" ? q.topic : "",
       });
     }
   });
@@ -561,7 +563,11 @@ async function finishReview() {
   const all = reviewSlugs();
   progress = await mutate(
     "progress",
-    (p) => withAskedQuestions(withReviewRound(p, cleared, all), results, (r) => r.question.lessonSlug),
+    (p) => withTopicsAsked(
+      withAskedQuestions(withReviewRound(p, cleared, all), results, (r) => r.question.lessonSlug),
+      results,
+      (r) => r.question.lessonSlug
+    ),
     message
   );
   renderStreak();
@@ -590,7 +596,7 @@ async function finishVocab() {
   if (!extraRound) progress = await mutate("progress", (p) => withTaskDone(p, "vocab"), message);
   renderStreak();
   renderSyncStatus();
-  renderMisses("Words you missed. These come back tomorrow:");
+  renderMisses("Words you missed. These come back in your next vocab quizzes:");
   if (extraRound) {
     $("result-title").textContent = "Vocab quiz done! Those words' schedules are updated.";
     $("practice-done").textContent = "Done";
@@ -635,6 +641,7 @@ async function finish() {
     };
     const slug = syllabus?.lessons[lessonIndex] ? lessonSlug(syllabus.lessons[lessonIndex]) : "";
     nextP = withAskedQuestions(nextP, results, () => slug);
+    nextP = withTopicsAsked(nextP, results, () => slug);
     if (passed) {
       nextP = withTaskDone(nextP, "lesson");
       const nextIndex = syllabus ? nextLessonIndex(syllabus, lessonIndex) : -1;
@@ -660,6 +667,7 @@ async function finish() {
     questions: results.map((r) => ({
       kind: kindOf(r.question),
       type: r.question.type,
+      ...(r.question.topic ? { topic: r.question.topic } : {}),
       q: r.q,
       given: r.given,
       skipped: r.skipped,
@@ -824,6 +832,8 @@ function matchReviewQuestions(questions, items) {
       q = { type: "text", q: x.prompt, answers: [String(x.answer)], expected: String(x.answer), explain: "", reviewOf: "earlier" };
     }
     if (q.reviewOf && q.reviewOf !== "earlier" && q.reviewOf !== it.mistake?.id) q.reviewOf = "earlier";
+    // Only count topics the lesson's digest actually has.
+    if (!quizTopics(it.digest).includes(q.topic)) q.topic = "";
     out.push(Object.assign(q, { lessonSlug: it.id, lessonIndex: it.index, lessonTitle: it.lesson.title }));
   }
   return out;
@@ -855,7 +865,7 @@ async function startVocab(ids = ["vocab-btn", "vocab-status", "vocab-error"]) {
   btn.disabled = true;
   status.textContent = "Picking words…";
   try {
-    const picks = pickVocab(await vocabPool(), vocab, settings.questionCount);
+    const picks = pickVocab(await vocabPool(), vocab);
     if (!picks.length) throw new Error("There's no vocabulary from completed lessons yet.");
     const questions = picks.map((w) => ({
       type: "text",
@@ -890,10 +900,12 @@ function questionSimilarity(a, b) {
   return both / (A.size + B.size - both);
 }
 
-// Keeps n of a generated quiz's questions, preferring ones least like questions recently answered right.
-// Anything at or above REPEAT_SIMILARITY counts as a repeat and goes last. Returns the quiz JSON text.
+// Keeps n of a generated quiz's questions. Ones like a question recently answered right (at or above
+// REPEAT_SIMILARITY) go last. The rest are picked one at a time from the topic asked least so far (counting
+// earlier quizzes, from coverage = progress.topicsAsked[slug], and the questions already picked), in the
+// order Gemini wrote them. Returns the quiz JSON text.
 const REPEAT_SIMILARITY = 0.8;
-function dropRepeats(text, asked, n) {
+function pickQuestions(text, asked, n, coverage = {}) {
   let data;
   try {
     data = JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, ""));
@@ -907,8 +919,19 @@ function dropRepeats(text, asked, n) {
     const s = Math.max(0, ...right.map((r) => questionSimilarity(q.q || q.question || "", r)));
     return { q, i, repeat: s >= REPEAT_SIMILARITY };
   });
-  // Fresh questions first in their original order, repeats only if there aren't enough fresh ones.
-  const kept = [...scored.filter((x) => !x.repeat), ...scored.filter((x) => x.repeat)].slice(0, n).map((x) => x.q);
+  const count = new Map();
+  const timesAsked = (q) => (coverage[q.topic]?.asked || 0) + (count.get(q.topic) || 0);
+  const fresh = scored.filter((x) => !x.repeat);
+  const picked = [];
+  while (picked.length < n && fresh.length) {
+    let best = 0;
+    for (let k = 1; k < fresh.length; k++) if (timesAsked(fresh[k].q) < timesAsked(fresh[best].q)) best = k;
+    const [x] = fresh.splice(best, 1);
+    count.set(x.q.topic, (count.get(x.q.topic) || 0) + 1);
+    picked.push(x);
+  }
+  // Repeats only if there aren't enough fresh ones. Back in the order Gemini wrote them.
+  const kept = [...picked, ...scored.filter((x) => x.repeat)].slice(0, n).sort((a, b) => a.i - b.i).map((x) => x.q);
   return JSON.stringify(Array.isArray(data) ? kept : { ...data, questions: kept });
 }
 
@@ -950,6 +973,7 @@ async function generateWithGemini({ mode = "daily", lessonIndex = currentLesson,
         n: settings.questionCount + SPARE_QUESTIONS,
       });
       minQuestions = settings.questionCount;
+      schema = lessonQuizSchema(quizTopics(digest));
     }
 
     // Second pass: catch duplicate answers, wrong keys, and incomplete hints. Keep the original if it fails.
@@ -970,7 +994,8 @@ async function generateWithGemini({ mode = "daily", lessonIndex = currentLesson,
       } catch {}
     }
     if (mode === "review") return startReviewQuiz(parseQuiz(text, { minQuestions: 1 }), items, "gemini");
-    text = dropRepeats(text, recentAsked(progress, lessonSlug(syllabus.lessons[lessonIndex])), settings.questionCount);
+    const slug = lessonSlug(syllabus.lessons[lessonIndex]);
+    text = pickQuestions(text, recentAsked(progress, slug), settings.questionCount, progress.topicsAsked?.[slug]);
     const msg = await beginQuiz(text, "gemini", { mode, lessonIndex, minQuestions });
     if (msg) throw new Error(`Gemini's quiz didn't work: ${msg} Try generating again.`);
   } catch (e) {
@@ -1302,16 +1327,18 @@ async function renderOverview() {
   body.replaceChildren(...parts);
 }
 
+function vocabSummary(pool) {
+  const { missed, fresh } = vocabBuckets(pool, vocab);
+  return `${plural(pool.length, "word")} from completed lessons: ${missed.length} missed recently, ${fresh.length} not tested yet.`;
+}
+
 // "More vocab" card on the done screen: extra vocab quizzes that update each word's schedule.
 async function renderVocabCard() {
   const pool = await vocabPool();
-  const words = vocab?.words || {};
-  const due = pool.filter((w) => words[w.key]?.due <= todayKey()).length;
-  const fresh = pool.filter((w) => !words[w.key]).length;
   $("vocab-card").hidden = !pool.length;
   $("vocab-more-summary").textContent =
-    `${plural(pool.length, "word")} from completed lessons: ${due} due, ${fresh} not tested yet. ` +
-    "Each quiz picks due words first, then new ones, then the ones you've gone longest without seeing.";
+    `${vocabSummary(pool)} Each quiz is a mix of ${VOCAB_QUESTIONS} words: ones you missed recently, ` +
+    "ones you haven't seen in the longest time, and new ones.";
 }
 
 function startPractice() {
@@ -1410,12 +1437,7 @@ async function renderTasks() {
   const pool = vocabDone ? [] : await vocabPool();
   if (run !== renderTasksRun) return;
   if (!vocabDone) {
-    const words = vocab?.words || {};
-    const dueWords = pool.filter((w) => words[w.key]?.due <= todayKey()).length;
-    const fresh = pool.filter((w) => !words[w.key]).length;
-    $("vocab-summary").textContent = pool.length
-      ? `${plural(pool.length, "word")} from completed lessons: ${dueWords} due, ${fresh} not tested yet.`
-      : "No vocabulary from completed lessons yet.";
+    $("vocab-summary").textContent = pool.length ? vocabSummary(pool) : "No vocabulary from completed lessons yet.";
   }
 
   // Nothing to test: count it as done so it doesn't block the day. Only once everything has loaded,

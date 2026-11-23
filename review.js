@@ -95,22 +95,37 @@ function withTaskDone(progress, task) {
 
 const vocabKey = (lessonSlugValue, pt) => `${lessonSlugValue}:${pt}`;
 
-// pool: [{ key, pt, en, lesson }]. Picks up to n words: missed and overdue words first, then words never
-// tested, then the ones seen longest ago. A word missed earlier today (box 0) counts as due, so extra
-// rounds start with it.
-function pickVocab(pool, vocabDoc, n) {
-  const today = todayKey();
+// Words per vocab quiz (separate from the lesson quiz's question count).
+const VOCAB_QUESTIONS = 15;
+// A word whose last answer was wrong counts as "missed recently" for this many days.
+const VOCAB_RECENT_DAYS = 14;
+
+// pool: [{ key, pt, en, lesson }]. Sorts the pool into three groups:
+//   missed:  last answer wrong, in the last VOCAB_RECENT_DAYS days (most recent first)
+//   fresh:   never tested (random order)
+//   longAgo: everything else tested, the ones gone longest without being seen first
+function vocabBuckets(pool, vocabDoc) {
   const words = vocabDoc?.words || {};
-  const seen = pool.filter((w) => words[w.key]);
-  const isDue = (w) => words[w.key].due <= today || words[w.key].box === 0;
-  const due = seen
-    .filter(isDue)
-    .sort((a, b) => words[a.key].box - words[b.key].box || (words[a.key].due < words[b.key].due ? -1 : 1));
-  const fresh = shuffleArray(pool.filter((w) => !words[w.key]));
-  const rest = seen
-    .filter((w) => !isDue(w))
-    .sort((a, b) => (words[a.key].seen < words[b.key].seen ? -1 : 1));
-  return [...due, ...fresh, ...rest].slice(0, n);
+  const since = addDays(todayKey(), -VOCAB_RECENT_DAYS);
+  const bySeen = (a, b) => (words[a.key].seen < words[b.key].seen ? -1 : words[a.key].seen > words[b.key].seen ? 1 : 0);
+  const seen = shuffleArray(pool.filter((w) => words[w.key]));
+  const isMissed = (w) => words[w.key].box === 0 && words[w.key].seen >= since;
+  return {
+    missed: seen.filter(isMissed).sort((a, b) => bySeen(b, a)),
+    fresh: shuffleArray(pool.filter((w) => !words[w.key])),
+    longAgo: seen.filter((w) => !isMissed(w)).sort(bySeen),
+  };
+}
+
+// Picks up to n words, a mix of the three groups: about a third each. If a group runs short, the others
+// fill its places. The picks are shuffled so the groups don't come in blocks.
+function pickVocab(pool, vocabDoc, n = VOCAB_QUESTIONS) {
+  const { missed, fresh, longAgo } = vocabBuckets(pool, vocabDoc);
+  const groups = [missed, fresh, longAgo];
+  const share = Math.floor(n / groups.length);
+  const picks = groups.flatMap((g) => g.slice(0, share));
+  const rest = groups.flatMap((g) => g.slice(share));
+  return shuffleArray([...picks, ...rest.slice(0, n - picks.length)]);
 }
 
 // results: [{ question: { vocab: { key, pt, en, lesson } }, correct }].
@@ -134,6 +149,27 @@ function applyVocab(vocabDoc, results) {
     };
   }
   return { ...vocabDoc, words };
+}
+
+// ---------- Lesson topics covered ----------
+// progress.topicsAsked: { [lesson slug]: { [topic]: { asked, wrong, last } } }, counted from daily lesson
+// quizzes and review quizzes together. Each question is tagged with one of its lesson digest's topics (see
+// quizTopics); the next lesson quiz spends most of its questions on that lesson's topics asked least, and
+// the review quiz aims each lesson's question at its topic asked least.
+
+// Pure: adds a finished quiz's tagged questions. slugOf(result) gives the lesson each question was on.
+function withTopicsAsked(progress, results, slugOf) {
+  const today = todayKey();
+  const all = { ...(progress.topicsAsked || {}) };
+  for (const r of results) {
+    const slug = slugOf(r);
+    const topic = r.question.topic;
+    if (!slug || !topic) continue;
+    const lesson = (all[slug] = { ...(all[slug] || {}) });
+    const cur = lesson[topic] || { asked: 0, wrong: 0 };
+    lesson[topic] = { asked: cur.asked + 1, wrong: cur.wrong + (r.correct ? 0 : 1), last: today };
+  }
+  return { ...progress, topicsAsked: all };
 }
 
 // ---------- Recently asked questions ----------
