@@ -187,8 +187,10 @@ ${lessonText}
 const EUROPEAN_EXAMPLES = "estar a + infinitive (está a falar), pronouns attached as vemo-los / fá-lo / veem-no, the contractions mo / lho / no-lo, and European-only words or spellings (dezasseis, comboio, autocarro)";
 const isBrazilian = (syllabus) => syllabus?.variety === "Brazilian";
 const brazilianOnlyRule = (syllabus) => isBrazilian(syllabus)
-  ? `\n- Brazilian Portuguese only: don't teach, test or use European (continental) Portuguese forms, such as ${EUROPEAN_EXAMPLES}. Mentioning Portugal as a place is fine.`
+  ? `\n- Brazilian Portuguese only: don't teach, test or use European (continental) Portuguese forms, such as ${EUROPEAN_EXAMPLES}. Mentioning Portugal as a place is fine.${BRAZILIAN_ANSWER_RULE}`
   : "";
+// Answer keys: the form a Brazilian would actually write, with everyday Brazilian alternatives accepted.
+const BRAZILIAN_ANSWER_RULE = `\n- Write every answer ("answer", "accept", practice answers) the way a Brazilian would: object pronouns before the conjugated verb (Ele me viu, Eu te ligo), você / vocês for "you", and Brazilian vocabulary and spelling. In "accept", add the everyday Brazilian alternatives a native speaker would also give (a gente for nós, para mim / para ele instead of two object pronouns, tem for há), unless the question tests the form they replace. The attached forms the lessons teach (visitá-lo, Viu-me) may be accepted, but never as the main answer when the pronoun-first form is natural. Never put European-only forms in "answer" or "accept".`;
 
 // The learner can opt out of pronunciation (settings.skipPronunciation).
 const NO_PRONUNCIATION_RULE =
@@ -616,7 +618,7 @@ Check every question:
 3. Written questions: "accept" must list every correct alternative (with or without the subject pronoun or article where the question allows it, masculine/feminine where the question is ambiguous) and nothing incorrect.
 4. Vocabulary hints: if a question gives the Portuguese for some words, it must give it for every word needed that isn't in the lesson vocabulary below, and say when two English words map to the same Portuguese word (e.g. "trip" and "voyage" are both viagem).
 5. No giveaways: a question must not contain its own answer or an obvious form of it. Check every example sentence inside a question: "Which verb states location, as in 'Isabel está na Europa'?" gives away ESTAR, and "Which verb expresses a profession, as in 'Ele é médico'?" gives away SER. Replace the giveaway word with a blank ("Isabel ___ na Europa"), or rewrite the question. Translation prompts must be fully in English apart from names, with no Portuguese from the answer in them and no hint that covers the point being tested: "Translate: 'Good morning, seu Antônio.' (use 'bom dia')" gives away the whole answer. Also check that the correct option isn't the only one that fits the question's grammar or wording (if the question names a word, like "Which sentence correctly uses 'menos'?", every option must contain that word, or the one that does is the answer), and that options don't carry markers that reveal the answer: for a gender question, "a casa / o problema / a aula / a porta" gives away the masculine noun through its article, so list bare nouns instead.
-6. Each question must be answerable from its own text and must stick to the lesson.${isBrazilian(syllabus) ? `\n7. Brazilian Portuguese only: replace any question that tests or uses European (continental) forms, such as ${EUROPEAN_EXAMPLES}.` : ""}${skipPronunciation ? `\n${isBrazilian(syllabus) ? 8 : 7}. No pronunciation questions (sounds, stress, syllables, which accent mark a word takes). Replace any with a question on the lesson's grammar or vocabulary.` : ""}
+6. Each question must be answerable from its own text and must stick to the lesson.${isBrazilian(syllabus) ? `\n7. Brazilian Portuguese only: replace any question that tests or uses European (continental) forms, such as ${EUROPEAN_EXAMPLES}. Check the answer keys too: "answer" must be what a Brazilian would write (pronoun before the conjugated verb: Ele me viu, not Ele viu-me, where the question doesn't test the attached form), "accept" must include the everyday Brazilian alternatives (a gente, para mim / para ele, tem for há) unless the question tests the form they replace, and European-only forms must be removed from both.` : ""}${skipPronunciation ? `\n${isBrazilian(syllabus) ? 8 : 7}. No pronunciation questions (sounds, stress, syllables, which accent mark a word takes). Replace any with a question on the lesson's grammar or vocabulary.` : ""}
 
 Keep the same number of questions in the same order, and keep each question's "type", "reviewOf", "lessonId" and "topic" (if it has them), and the quiz's "lesson". A replacement question tests the same topic. Only rewrite or replace questions that have a problem; leave good ones exactly as they are.
 ${problems.length ? `
@@ -660,7 +662,10 @@ Mark it correct if the learner's English means the same thing as the Portuguese 
   return { correct: !!r.correct, feedback: String(r.feedback || "") };
 }
 
-async function judgeAnswer({ apiKey, model, question, expected, accept, given }) {
+async function judgeAnswer({ apiKey, model, syllabus, question, expected, accept, given }) {
+  const brazilian = isBrazilian(syllabus)
+    ? `\nJudge by Brazilian Portuguese, which the learner is studying. Everyday Brazilian forms are correct (pronoun before the verb, a gente, para mim / para ele instead of two object pronouns, tem for há) unless they skip the point being tested. A European-only form is incorrect, such as ${EUROPEAN_EXAMPLES}; give the Brazilian form in the feedback.`
+    : "";
   const text = await generateJson({
     apiKey,
     model,
@@ -677,7 +682,7 @@ Question: ${question}
 Answer key: ${[expected, ...(accept || [])].join(" | ")}
 Learner's answer: ${given}
 
-Mark it correct if it is grammatically correct Portuguese that answers the question with the same meaning, even if it differs from the answer key. It must still use the grammar point the question is testing.
+Mark it correct if it is grammatically correct Portuguese that answers the question with the same meaning, even if it differs from the answer key. It must still use the grammar point the question is testing.${brazilian}
 Ignore accents, capitalization, and punctuation: missing or wrong accents never make an answer incorrect (but show the correct accents in the feedback). Letters still matter: a different spelling or form of the word being tested is incorrect even if it's close (for example "faroes" for "faróis").
 "feedback" is one or two short sentences in English: why it's right or wrong, and the fix if wrong.`,
     }],

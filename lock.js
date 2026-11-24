@@ -342,6 +342,7 @@ async function answerText() {
       : await judgeAnswer({
           apiKey: settings.geminiApiKey,
           model: settings.geminiModel,
+          syllabus,
           question: q.q,
           expected: q.expected,
           accept: q.answers.slice(1),
