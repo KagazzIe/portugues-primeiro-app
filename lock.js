@@ -34,6 +34,9 @@ function show(v) {
 }
 
 const lesson = () => syllabus?.lessons[currentLesson];
+// The lesson today's quizzes are on. Picking another lesson in the list only browses it.
+const todayLesson = () => (syllabus ? Math.min(progress.currentLesson || 0, syllabus.lessons.length - 1) : 0);
+const browsing = () => !!syllabus && currentLesson !== todayLesson();
 
 // ---------- Copy-and-paste quiz prompt (fallback when Gemini is unavailable) ----------
 
@@ -535,7 +538,7 @@ function finishPractice() {
   $("result-title").textContent = "Practice done. This one doesn't count.";
   renderMisses("What you missed:");
   $("practice-done").textContent = "Done";
-  offerAgain("Another practice quiz", startPractice);
+  offerAgain("Another practice quiz", () => (practiceAgain || startPractice)());
   $("practice-done").hidden = false;
 }
 
@@ -1157,11 +1160,16 @@ function renderLesson() {
   if (select.options.length !== syllabus.lessons.length) {
     select.replaceChildren(...syllabus.lessons.map((l, i) => new Option(`Lesson ${i + 1} of ${syllabus.lessons.length}: ${l.title}${l.skip ? " (skipped)" : ""}`, i)));
   }
+  const today = todayLesson();
+  [...select.options].forEach((o, i) => {
+    const label = o.text.replace(/ \(today\)$/, "");
+    o.text = i === today ? `${label} (today)` : label;
+  });
   select.value = currentLesson;
 
   const l = lesson();
   const day = dayOnLesson(progress, currentLesson);
-  $("lesson-meta").textContent = `${syllabus.title} · ${l.sources.map((s) => s.title).join(" + ")} · day ${day} on this lesson`;
+  $("lesson-meta").textContent = `${syllabus.title} · ${l.sources.map((s) => s.title).join(" + ")}${browsing() ? "" : ` · day ${day} on this lesson`}`;
   renderDaily();
   $("prompt-preview").textContent = quizPrompt(focusText(), settings.questionCount);
   renderPlan();
@@ -1342,12 +1350,32 @@ async function renderVocabCard() {
     "ones you haven't seen in the longest time, and new ones.";
 }
 
+// Practice quizzes come from the done screen's lesson list or from browsing a lesson; "again" repeats the last one.
+let practiceAgain = null;
 function startPractice() {
+  practiceAgain = startPractice;
   generateWithGemini({
     mode: "practice",
     lessonIndex: Number($("practice-lesson").value),
     ids: ["practice-btn", "practice-status", "practice-error"],
   });
+}
+
+function startBrowsePractice() {
+  const lessonIndex = currentLesson;
+  practiceAgain = () => {
+    currentLesson = lessonIndex;
+    render();
+    startBrowsePractice();
+  };
+  generateWithGemini({ mode: "practice", lessonIndex, ids: ["browse-practice", "browse-status", "browse-error"] });
+}
+
+function backToToday() {
+  currentLesson = todayLesson();
+  render();
+  ensureDailyLesson();
+  window.scrollTo(0, 0);
 }
 
 function startReview() {
@@ -1472,8 +1500,17 @@ function render() {
     return;
   }
   const hasGemini = !!settings.geminiApiKey;
-  $("gemini-setup-hint").hidden = hasGemini;
-  renderTasks();
+  const away = browsing();
+  $("gemini-setup-hint").hidden = hasGemini || away;
+  $("tasks-card").hidden = away;
+  $("manual").hidden = away;
+  $("browse-card").hidden = !away;
+  $("browse-note").hidden = !away;
+  $("browse-practice").hidden = !hasGemini;
+  $("browse-no-gemini").hidden = hasGemini;
+  $("lesson-heading").textContent = away ? "Lesson" : "Today's lesson";
+  // The tasks are worked out from today's lesson, so leave them alone while browsing another one.
+  if (!away) renderTasks();
   document.querySelectorAll(".count-label").forEach((e) => (e.textContent = settings.questionCount));
   document.querySelectorAll(".pass-label").forEach((e) => (e.textContent = settings.passPercent));
   renderLesson();
@@ -1487,10 +1524,11 @@ function wire() {
   $("done-continue").addEventListener("click", continueBrowsing);
   $("lesson-select").addEventListener("change", async (e) => {
     currentLesson = Number(e.target.value);
-    renderLesson();
+    render();
     ensureDailyLesson();
-    progress = await mutate("progress", (p) => ({ ...p, currentLesson }), `Set lesson to ${lesson().title}`);
   });
+  document.querySelectorAll(".back-to-today").forEach((b) => b.addEventListener("click", backToToday));
+  $("browse-practice").addEventListener("click", startBrowsePractice);
   $("read-lesson").addEventListener("click", () => lesson() && browser.tabs.create({ url: lesson().sources[0].link }));
   $("rewrite-lesson").addEventListener("click", () => ensureDailyLesson({ rewrite: true }));
   $("copy-quiz").addEventListener("click", (e) => copy(quizPrompt(focusText(), settings.questionCount), e.currentTarget));

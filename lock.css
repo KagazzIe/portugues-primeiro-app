@@ -68,6 +68,8 @@ button {
 }
 button:hover { border-color: var(--green); }
 button.primary { background: var(--green); border-color: var(--green); color: #fff; font-weight: 600; }
+.browse-note { margin: 8px 0 0; padding: 8px 10px; border-left: 3px solid var(--green); }
+.browse-note button.link { padding: 0 4px; }
 button.link { border: none; background: none; color: var(--green); text-decoration: underline; padding: 9px 4px; }
 button:disabled { opacity: .5; cursor: default; }
 

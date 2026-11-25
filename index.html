@@ -29,7 +29,7 @@
     <!-- 1. Study, then take the quiz -->
     <section id="setup-view" hidden>
       <div class="card">
-        <h2><span class="num">1</span> Today's lesson</h2>
+        <h2><span class="num">1</span> <span id="lesson-heading">Today's lesson</span></h2>
 
         <p id="lesson-loading" class="hint">Loading lessons…</p>
         <p id="lesson-error" class="error" hidden></p>
@@ -38,6 +38,8 @@
           <div class="lesson-head">
             <select id="lesson-select" aria-label="Lesson"></select>
           </div>
+          <p id="browse-note" class="browse-note" hidden>You're looking at another lesson. Today's quizzes stay on today's lesson.
+            <button class="link back-to-today">← Back to today</button></p>
           <p id="lesson-meta" class="hint" style="margin-top:4px"></p>
           <p id="daily-status" class="hint" hidden></p>
           <p id="daily-error" class="error" hidden></p>
@@ -58,6 +60,18 @@
           <button id="read-lesson">Read the original ↗</button>
           <button id="rewrite-lesson" class="link" hidden>Rewrite today's lesson</button>
         </div>
+      </div>
+
+      <div class="card" id="browse-card" hidden>
+        <h2><span class="num">2</span> Practice this lesson</h2>
+        <p class="hint" style="margin-top:0">A practice quiz on this lesson only. It doesn't count towards today's quizzes<span class="ext-only"> or unlock Firefox</span>.</p>
+        <div class="row">
+          <button id="browse-practice" class="primary">Practice quiz on this lesson</button>
+          <button class="back-to-today">← Back to today's lesson</button>
+        </div>
+        <p id="browse-no-gemini" class="hint" hidden>Practice quizzes need a Gemini API key in settings.</p>
+        <p id="browse-status" class="hint"></p>
+        <p id="browse-error" class="error" hidden></p>
       </div>
 
       <div class="card" id="tasks-card">
