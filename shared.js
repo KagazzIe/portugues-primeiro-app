@@ -88,6 +88,34 @@ function completeDate(progress) {
 
 const dayDone = (progress) => completeDate(progress) === todayKey();
 
+// ---------- Streak ----------
+// One missed day per week doesn't break the streak: a missed day is forgiven if no other missed day was
+// forgiven in the 6 days before it. Two missed days in a row always break it. Forgiven days are kept in
+// progress.forgivenMisses (date keys) and don't add to the streak count.
+const MISS_WINDOW_DAYS = 7;
+
+function addDaysToKey(key, n) {
+  const [y, m, d] = key.split("-").map(Number);
+  return dateKey(new Date(y, m - 1, d + n));
+}
+
+function canForgiveMiss(progress, missKey) {
+  const since = addDaysToKey(missKey, -(MISS_WINDOW_DAYS - 1));
+  return !(progress?.forgivenMisses || []).some((k) => k >= since && k < missKey);
+}
+
+// Whether yesterday was missed but will be forgiven if today is finished.
+function missForgivable(progress) {
+  const yesterday = yesterdayKey();
+  return completeDate(progress) === addDaysToKey(yesterday, -1) && canForgiveMiss(progress, yesterday);
+}
+
+// The streak still counts if the last finished day was today or yesterday, or the day before with a forgivable miss.
+function streakAlive(progress) {
+  const last = completeDate(progress);
+  return last === todayKey() || last === yesterdayKey() || missForgivable(progress);
+}
+
 function hostAllowed(host, allowlist) {
   return allowlist.some((a) => host === a || host.endsWith("." + a));
 }

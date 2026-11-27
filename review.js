@@ -83,7 +83,12 @@ function withTaskDone(progress, task) {
   const prevComplete = completeDate(progress);
   const p = { ...progress, lastCompleteDate: prevComplete, [DAILY_TASKS[task]]: today };
   if (Object.keys(DAILY_TASKS).every((t) => taskDone(p, t)) && prevComplete !== today) {
-    p.streak = prevComplete === yesterdayKey() ? (p.streak || 0) + 1 : 1;
+    const forgive = missForgivable(progress);
+    p.streak = prevComplete === yesterdayKey() || forgive ? (p.streak || 0) + 1 : 1;
+    if (forgive) {
+      const keepFrom = addDaysToKey(today, -30);
+      p.forgivenMisses = [...(p.forgivenMisses || []).filter((k) => k >= keepFrom), yesterdayKey()];
+    }
     p.lastCompleteDate = today;
   }
   return p;

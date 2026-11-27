@@ -1185,10 +1185,11 @@ function renderPlan() {
 // ---------- Misc ----------
 
 function renderStreak() {
-  const last = completeDate(progress);
-  const alive = last === todayKey() || last === yesterdayKey();
-  const n = alive ? progress.streak || 0 : 0;
-  $("streak").textContent = n ? `🔥 ${n}-day streak` : "No streak yet. Start one today!";
+  const n = streakAlive(progress) ? progress.streak || 0 : 0;
+  const saved = n && !dayDone(progress) && missForgivable(progress);
+  $("streak").textContent = !n
+    ? "No streak yet. Start one today!"
+    : `🔥 ${n}-day streak${saved ? " · You missed yesterday. That's your one free miss this week: finish today to keep the streak." : ""}`;
 }
 
 async function renderSyncStatus() {

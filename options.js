@@ -17,8 +17,7 @@ async function render() {
   $("min-p").textContent = MIN_PASS_PERCENT;
 
   const [progress, review, syllabus] = await Promise.all([getDoc("progress"), getDoc("review"), getDoc("syllabus")]);
-  const last = completeDate(progress);
-  const alive = last === todayKey() || last === yesterdayKey();
+  const alive = streakAlive(progress);
   const st = await browser.storage.local.get(["sync:error", "sync:last"]);
   const sync = !s.githubRepo
     ? "Not syncing"
