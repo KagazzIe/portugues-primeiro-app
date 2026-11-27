@@ -94,7 +94,11 @@ function parseQuiz(text, { minQuestions = settings.questionCount } = {}) {
     const n = i + 1;
     const text = q.q || q.question;
     if (!text) throw new Error(`Question ${n} has no text.`);
-    if (q.type === "mc" || Array.isArray(q.options)) {
+    // Gemini sometimes sends "options": [] on written questions, or too few on a multiple-choice one that
+    // still has an answer. Treat those as written questions rather than failing the whole quiz.
+    const optCount = Array.isArray(q.options) ? q.options.filter((o) => String(o).trim()).length : 0;
+    const isMc = q.type === "mc" ? optCount >= 2 || !q.answer : q.type !== "text" && optCount > 0;
+    if (isMc) {
       const opts = q.options;
       if (!Array.isArray(opts) || opts.length < 2) throw new Error(`Question ${n} needs at least 2 options.`);
       let ans = q.answer;
@@ -916,8 +920,12 @@ function pickQuestions(text, asked, n, coverage = {}) {
   } catch {
     return text; // parseQuiz will report it
   }
-  const raw = Array.isArray(data) ? data : data.questions;
-  if (!Array.isArray(raw) || raw.length <= n) return text;
+  const all = Array.isArray(data) ? data : data.questions;
+  if (!Array.isArray(all)) return text;
+  // Leave out multiple-choice questions Gemini sent without real options while there are spares.
+  const broken = (q) => q.type === "mc" && !(Array.isArray(q.options) && q.options.filter((o) => String(o).trim()).length >= 2);
+  const raw = all.filter((q) => !broken(q)).length >= n ? all.filter((q) => !broken(q)) : all;
+  if (raw.length <= n) return JSON.stringify(Array.isArray(data) ? raw : { ...data, questions: raw });
   const right = asked.filter((a) => a.correct).map((a) => a.q);
   const scored = raw.map((q, i) => {
     const s = Math.max(0, ...right.map((r) => questionSimilarity(q.q || q.question || "", r)));
