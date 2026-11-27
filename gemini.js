@@ -353,7 +353,7 @@ const QUIZ_SCHEMA = {
           reviewOf: { type: "STRING" },
           translation: { type: "STRING" },
         },
-        required: ["type", "q", "answer", "explain"],
+        required: ["type", "q", "options", "answer", "explain"],
       },
     },
   },
@@ -361,6 +361,7 @@ const QUIZ_SCHEMA = {
 };
 
 const QUESTION_RULES = `- About 60% "mc" (multiple choice, 4 options, "answer" is the exact text of the correct option) and 40% "text" (translate English to Portuguese, fill in the blank, or conjugate a verb).
+- Every "mc" question MUST list its 4 options in "options". A "text" question has "options": [].
 - "text" answers must be short (one word up to one sentence). Put every reasonable alternative in "accept" (with/without subject pronoun, masculine/feminine, etc.).
 - "explain" is one short sentence in English teaching the rule.
 - For "mc", "translation" is a full, natural English translation of the correct answer. If the question is a Portuguese sentence with a blank, translate the whole completed sentence (e.g. "Ela ___ médica." with answer "é" → "She is a doctor."); otherwise translate the correct option itself (e.g. "o problema" → "the problem"). Leave it "" if the correct option is already English. Never give the translation away in the question.
@@ -553,7 +554,7 @@ function reviewSchema(lessonIds) {
             lessonId: { type: "STRING", format: "enum", enum: lessonIds },
             topic: { type: "STRING" },
           },
-          required: [...item.required, "lessonId", "topic"],
+          required: [...item.required.filter((k) => k !== "options"), "lessonId", "topic"],
         },
       },
     },

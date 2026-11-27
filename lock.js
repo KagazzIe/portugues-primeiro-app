@@ -94,11 +94,12 @@ function parseQuiz(text, { minQuestions = settings.questionCount } = {}) {
     const n = i + 1;
     const text = q.q || q.question;
     if (!text) throw new Error(`Question ${n} has no text.`);
-    // Gemini sometimes sends "options": [] on written questions, or too few on a multiple-choice one that
-    // still has an answer. Treat those as written questions rather than failing the whole quiz.
+    // Gemini sends "options": [] on written questions. A multiple-choice question that came back without
+    // real options makes no sense typed ("Which adverb is correct?"), so it's dropped; the count check below
+    // fails the quiz if too few are left.
     const optCount = Array.isArray(q.options) ? q.options.filter((o) => String(o).trim()).length : 0;
-    const isMc = q.type === "mc" ? optCount >= 2 || !q.answer : q.type !== "text" && optCount > 0;
-    if (isMc) {
+    if (q.type === "mc" && optCount < 2) return;
+    if (q.type === "mc" || (q.type !== "text" && optCount > 0)) {
       const opts = q.options;
       if (!Array.isArray(opts) || opts.length < 2) throw new Error(`Question ${n} needs at least 2 options.`);
       let ans = q.answer;
