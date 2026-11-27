@@ -1,7 +1,7 @@
 {
   "addons": {
     "portugues-primeiro@local": {
-      "updates": [{ "version": "2.4.10.301", "update_link": "https://kagazzie.github.io/portugues-primeiro-app/firefox/portugues-primeiro-2.4.10.301.xpi" }]
+      "updates": [{ "version": "2.4.10.311", "update_link": "https://kagazzie.github.io/portugues-primeiro-app/firefox/portugues-primeiro-2.4.10.311.xpi" }]
     }
   }
 }
