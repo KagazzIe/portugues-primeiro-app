@@ -1492,14 +1492,14 @@ async function renderTasks() {
   }
 }
 
-// Counts today's lesson quiz as done without taking it (a lesson done elsewhere, like Babbel). You stay on
-// the same lesson, nothing goes in the quiz history, and the review and vocab quizzes are still needed.
+// A lesson done elsewhere (like Babbel) stands in for the whole day: all three quizzes count as done, so the
+// day is finished and the streak goes on. You stay on the same lesson and nothing goes in the quiz history.
 async function skipLessonQuiz() {
-  if (!confirm("Skip today's lesson quiz because you did a lesson elsewhere? You'll stay on this lesson, and you still need the review and vocab quizzes.")) return;
+  if (!confirm("Did a lesson elsewhere today? This finishes today without the app's quizzes. You'll stay on this lesson.")) return;
   const btn = $("skip-lesson");
   btn.disabled = true;
   try {
-    progress = await mutate("progress", (p) => ({ ...withTaskDone(p, "lesson"), lessonSkippedDate: todayKey() }), `Skip lesson quiz ${todayKey()} (lesson done elsewhere)`);
+    progress = await mutate("progress", (p) => ({ ...["lesson", "review", "vocab"].reduce(withTaskDone, p), lessonSkippedDate: todayKey() }), `Day ${todayKey()} done with a lesson elsewhere`);
     render();
   } catch (e) {
     $("gemini-error").textContent = `Couldn't skip the lesson quiz: ${e.message}`;
