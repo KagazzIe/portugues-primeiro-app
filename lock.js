@@ -1451,8 +1451,9 @@ async function renderTasks() {
   mark("lesson", lessonDone);
   $("generate-quiz").hidden = lessonDone || !hasGemini;
   $("gemini-plan").hidden = lessonDone;
+  $("skip-lesson").hidden = lessonDone;
   $("lesson-task-note").textContent = lessonDone
-    ? "Passed today."
+    ? progress.lessonSkippedDate === todayKey() ? "Skipped today: you did a lesson elsewhere." : "Passed today."
     : hasGemini ? `You need ${settings.passPercent}% to pass.` : "Use \"Paste a quiz from any chatbot\" below to take it.";
 
   const reviewDone = taskDone(progress, "review");
@@ -1488,6 +1489,23 @@ async function renderTasks() {
   if (autoDone.length) {
     progress = await mutate("progress", (p) => autoDone.reduce(withTaskDone, p), `Nothing to ${autoDone.join(" or ")} yet`);
     if (run === renderTasksRun) render();
+  }
+}
+
+// Counts today's lesson quiz as done without taking it (a lesson done elsewhere, like Babbel). You stay on
+// the same lesson, nothing goes in the quiz history, and the review and vocab quizzes are still needed.
+async function skipLessonQuiz() {
+  if (!confirm("Skip today's lesson quiz because you did a lesson elsewhere? You'll stay on this lesson, and you still need the review and vocab quizzes.")) return;
+  const btn = $("skip-lesson");
+  btn.disabled = true;
+  try {
+    progress = await mutate("progress", (p) => ({ ...withTaskDone(p, "lesson"), lessonSkippedDate: todayKey() }), `Skip lesson quiz ${todayKey()} (lesson done elsewhere)`);
+    render();
+  } catch (e) {
+    $("gemini-error").textContent = `Couldn't skip the lesson quiz: ${e.message}`;
+    $("gemini-error").hidden = false;
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -1549,6 +1567,7 @@ function wire() {
   });
   $("start-quiz").addEventListener("click", startPastedQuiz);
   $("generate-quiz").addEventListener("click", () => generateWithGemini());
+  $("skip-lesson").addEventListener("click", skipLessonQuiz);
   $("practice-btn").addEventListener("click", startPractice);
   $("review-btn").addEventListener("click", startReview);
   $("review-offline-btn").addEventListener("click", startOfflineReview);
